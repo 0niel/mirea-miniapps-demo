@@ -67,6 +67,14 @@ function toast(message: string, type?: string): Action {
   return { actionType: "showToast", message, ...(type ? { type } : {}) };
 }
 
+function haptic(style = "light"): Action {
+  return { actionType: "hapticFeedback", style };
+}
+
+function setState(key: string, value: unknown): Action {
+  return { actionType: "setState", key, value };
+}
+
 function multiple(...actions: Action[]): Action {
   return { actionType: "multiAction", actions, sync: true };
 }
@@ -76,8 +84,12 @@ function request(
   body: JsonObject,
   success: Action = { actionType: "reload" },
   created?: Action,
+  busyKey = "",
 ): Action {
-  const error = toast("Проверь данные или попробуй ещё раз", "error");
+  const finish = (action: Action) =>
+    busyKey ? multiple(setState(busyKey, false), action) : action;
+  const error = finish(toast("Проверь данные или попробуй ещё раз", "error"));
+  const complete = (action: Action) => finish(multiple(haptic(), action));
   return {
     actionType: "networkRequest",
     url,
@@ -85,26 +97,75 @@ function request(
     contentType: "application/json",
     body,
     results: [
-      { statusCode: 200, action: success },
-      { statusCode: 201, action: created ?? success },
+      { statusCode: 200, action: complete(success) },
+      { statusCode: 201, action: complete(created ?? success) },
       { statusCode: 400, action: error },
-      { statusCode: 401, action: toast("Нужно войти заново", "error") },
-      { statusCode: 403, action: toast("Действие недоступно", "error") },
-      { statusCode: 404, action: toast("Анкета уже недоступна", "warning") },
+      { statusCode: 401, action: finish(toast("Нужно войти заново", "error")) },
+      {
+        statusCode: 403,
+        action: finish(toast("Действие недоступно", "error")),
+      },
+      {
+        statusCode: 404,
+        action: finish(toast("Анкета уже недоступна", "warning")),
+      },
       { statusCode: 405, action: error },
       { statusCode: 409, action: error },
-      { statusCode: 413, action: toast("Файл слишком большой", "error") },
+      {
+        statusCode: 413,
+        action: finish(toast("Файл слишком большой", "error")),
+      },
+      {
+        statusCode: 415,
+        action: finish(toast("Выбери JPEG, PNG или WebP", "error")),
+      },
       { statusCode: 422, action: error },
       {
         statusCode: 429,
-        action: toast("Лимит на сегодня исчерпан", "warning"),
+        action: finish(toast("Лимит на сегодня исчерпан", "warning")),
       },
-      { statusCode: 500, action: toast("Сервис временно недоступен", "error") },
-      { statusCode: 502, action: toast("Сервис временно недоступен", "error") },
-      { statusCode: 503, action: toast("Сервис временно недоступен", "error") },
-      { statusCode: 504, action: toast("Сервис не успел ответить", "error") },
+      {
+        statusCode: 500,
+        action: finish(toast("Сервис временно недоступен", "error")),
+      },
+      {
+        statusCode: 502,
+        action: finish(toast("Сервис временно недоступен", "error")),
+      },
+      {
+        statusCode: 503,
+        action: finish(toast("Сервис временно недоступен", "error")),
+      },
+      {
+        statusCode: 504,
+        action: finish(toast("Сервис не успел ответить", "error")),
+      },
     ],
   };
+}
+
+function journeyStep(
+  step: number,
+  total: number,
+  title: string,
+  subtitle: string,
+): Widget {
+  return card([
+    row([
+      {
+        type: "expanded",
+        child: text(`Шаг ${step} из ${total} · ${title}`, "headlineStrong"),
+      },
+      {
+        type: "appCountBadge",
+        count: step,
+      },
+    ]),
+    gap(10),
+    { type: "appProgressBar", value: step / total, color: "accent", height: 7 },
+    gap(8),
+    text(subtitle, "subtext", "muted"),
+  ], { tinted: true, radius: 20 });
 }
 
 function shell(children: Widget[], title = "Искра"): Widget {
@@ -172,6 +233,13 @@ function hero(): Widget {
 function gateScreen(): Widget {
   return shell([
     hero(),
+    gap(12),
+    journeyStep(
+      1,
+      3,
+      "Безопасность",
+      "Подтверди возраст и правила. Дальше — анкета и необязательное фото.",
+    ),
     gap(16),
     card([
       text("Только для совершеннолетних", "section"),
@@ -251,6 +319,17 @@ function profileScreen(profileValue: unknown, isModerator = false): Widget {
     profile.interests = profile.interests.join(", ");
   }
   return shell([
+    ...(!profileValue
+      ? [
+        journeyStep(
+          2,
+          3,
+          "Анкета",
+          "Расскажи достаточно, чтобы начать разговор — без фамилии, адреса и контактов.",
+        ),
+        gap(14),
+      ]
+      : []),
     card([
       row([
         {
@@ -312,6 +391,10 @@ function profileScreen(profileValue: unknown, isModerator = false): Widget {
               minLength: 2,
               maxLength: 2,
               validationMessage: "Укажи возраст от 18 до 99",
+              rules: [{
+                rule: "matches",
+                options: { pattern: "^(?:1[89]|[2-9][0-9])$" },
+              }],
             },
             gap(12),
             {
@@ -336,6 +419,37 @@ function profileScreen(profileValue: unknown, isModerator = false): Widget {
               stateKey: "intent",
               value: profile.intent,
               options: intentOptions,
+            },
+            gap(10),
+            {
+              type: "appSwitch",
+              value: "state.intent",
+              cases: [
+                {
+                  when: "relationship",
+                  child: text(
+                    "Покажем выше людей, которым тоже важны отношения.",
+                    "caption",
+                    "muted",
+                  ),
+                },
+                {
+                  when: "date",
+                  child: text(
+                    "Сфокусируем рекомендации на живом знакомстве и встречах.",
+                    "caption",
+                    "muted",
+                  ),
+                },
+                {
+                  when: "communication",
+                  child: text(
+                    "Подберём людей, открытых к спокойному общению без давления.",
+                    "caption",
+                    "muted",
+                  ),
+                },
+              ],
             },
           ]),
           gap(12),
@@ -462,16 +576,22 @@ function intentLabel(value: unknown): string {
     : "Общение";
 }
 
-function candidateScreen(candidateValue: unknown): Widget {
+function candidateScreen(
+  candidateValue: unknown,
+  decisionsRemaining = 40,
+): Widget {
   const candidate = objectOf(candidateValue);
   if (!candidate.publicId) {
     return card([
       {
         type: "appEmptyState",
-        emoji: "🌙",
-        title: "На сегодня всё",
-        subtitle:
-          "Новые анкеты появятся здесь, а старые вернутся через 30 дней",
+        emoji: decisionsRemaining === 0 ? "🫶" : "🌙",
+        title: decisionsRemaining === 0
+          ? "Хороших решений достаточно"
+          : "Пока всё",
+        subtitle: decisionsRemaining === 0
+          ? "Лимит обновится завтра — мэтчи и контакты останутся на месте"
+          : "Новые анкеты появятся здесь, а просмотренные вернутся через 30 дней",
       },
       gap(8),
       button("Обновить", { actionType: "reload" }, "secondary", {
@@ -482,6 +602,17 @@ function candidateScreen(candidateValue: unknown): Widget {
   const interests = Array.isArray(candidate.interests)
     ? candidate.interests
     : [];
+  const sharedInterests = new Set(
+    Array.isArray(candidate.sharedInterests)
+      ? candidate.sharedInterests.map(String)
+      : [],
+  );
+  const affinity = [
+    ...(candidate.sameIntent === true ? ["Одинаковая цель"] : []),
+    ...(sharedInterests.size > 0
+      ? [`Общих интересов: ${sharedInterests.size}`]
+      : []),
+  ];
   return card([
     profilePhoto(candidate),
     gap(16),
@@ -500,6 +631,22 @@ function candidateScreen(candidateValue: unknown): Widget {
         withDot: false,
       },
     ]),
+    ...(affinity.length > 0
+      ? [
+        gap(10),
+        {
+          type: "wrap",
+          spacing: 8,
+          runSpacing: 8,
+          children: affinity.map((label) => ({
+            type: "appTag",
+            label,
+            tone: "success",
+            withDot: true,
+          })),
+        },
+      ]
+      : []),
     gap(8),
     {
       type: "appExpandableText",
@@ -513,9 +660,11 @@ function candidateScreen(candidateValue: unknown): Widget {
       runSpacing: 8,
       children: interests.map((interest) => ({
         type: "appTag",
-        label: String(interest),
-        tone: "mute",
-        withDot: false,
+        label: sharedInterests.has(String(interest))
+          ? `Общее · ${String(interest)}`
+          : String(interest),
+        tone: sharedInterests.has(String(interest)) ? "accent" : "mute",
+        withDot: sharedInterests.has(String(interest)),
       })),
     },
     gap(16),
@@ -557,12 +706,9 @@ function candidateScreen(candidateValue: unknown): Widget {
                   decision: "like",
                   opener: { actionType: "getFormValue", id: "opener" },
                 },
-                multiple(
-                  { actionType: "hapticFeedback", style: "medium" },
-                  openPage(
-                    `/after-like?id=${candidate.publicId}`,
-                    "Симпатия отправлена",
-                  ),
+                openPage(
+                  `/after-like?id=${candidate.publicId}`,
+                  "Симпатия отправлена",
                 ),
               ),
               "primary",
@@ -589,8 +735,20 @@ function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
   const state = objectOf(stateValue);
   const profile = objectOf(state.profile);
   const photoStatus = stringOf(profile.photoStatus);
+  const decisionsRemaining = Math.max(
+    0,
+    Math.min(40, Number(state.decisionsRemaining ?? 40)),
+  );
   const children: Widget[] = [hero(), gap(14)];
-  if (photoStatus === "pending") {
+  if (photoStatus === "none") {
+    children.push({
+      type: "appBanner",
+      message: "С фото анкета заметнее. Оно будет приватным до проверки.",
+      tone: "accent",
+      actionLabel: "Добавить",
+      onAction: openPage("/photo", "Фото"),
+    }, gap(12));
+  } else if (photoStatus === "pending") {
     children.push({
       type: "appBanner",
       message: "Фото на проверке. До одобрения виден твой эмодзи-аватар.",
@@ -631,8 +789,32 @@ function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
         },
       },
     ]),
+    gap(12),
+    card([
+      row([
+        {
+          type: "expanded",
+          child: column([
+            text("Спокойный темп", "headlineStrong"),
+            text(
+              `Сегодня осталось решений: ${decisionsRemaining} из 40`,
+              "subtext",
+              "muted",
+            ),
+          ]),
+        },
+        { type: "appCountBadge", count: decisionsRemaining },
+      ]),
+      gap(10),
+      {
+        type: "appProgressBar",
+        value: decisionsRemaining / 40,
+        color: decisionsRemaining < 8 ? "warn" : "accent",
+        height: 7,
+      },
+    ], { tinted: true, radius: 20 }),
     gap(16),
-    candidateScreen(candidateValue),
+    candidateScreen(candidateValue, decisionsRemaining),
     gap(16),
     {
       type: "appListGroup",
@@ -685,10 +867,41 @@ function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
   return shell(children);
 }
 
-function photoScreen(profileValue: unknown): Widget {
+function photoScreen(profileValue: unknown, stateValue: unknown): Widget {
   const profile = objectOf(profileValue);
+  const state = objectOf(stateValue);
   const status = stringOf(profile.photoStatus);
+  const photosRemaining = Math.max(
+    0,
+    Math.min(5, Number(state.photosRemaining ?? 5)),
+  );
+  const canUpload = photosRemaining > 0;
+  const pickPhoto = (source: "camera" | "gallery"): Action =>
+    multiple(
+      setState("picking", true),
+      {
+        actionType: "pickImage",
+        saveAs: "photo",
+        source,
+        onResult: setState("picking", false),
+        onCancel: multiple(
+          setState("picking", false),
+          toast("Фото не выбрано", "warning"),
+        ),
+      },
+    );
   return shell([
+    ...(["none", "rejected"].includes(status)
+      ? [
+        journeyStep(
+          3,
+          3,
+          "Фото",
+          "Необязательный шаг. До ручной проверки снимок виден только тебе и модератору.",
+        ),
+        gap(14),
+      ]
+      : []),
     status === "approved"
       ? {
         type: "appBanner",
@@ -723,15 +936,43 @@ function photoScreen(profileValue: unknown): Widget {
       }
       : profilePhoto(profile, 240),
     gap(14),
+    card([
+      row([
+        {
+          type: "expanded",
+          child: column([
+            text("Лимит на сегодня", "headlineStrong"),
+            text("Одна попытка возвращается при ошибке", "caption", "muted"),
+          ]),
+        },
+        { type: "appCountBadge", count: photosRemaining },
+      ]),
+      gap(10),
+      {
+        type: "appProgressBar",
+        value: photosRemaining / 5,
+        color: canUpload ? "accent" : "warn",
+        height: 7,
+      },
+    ], { tinted: true, radius: 20 }),
+    gap(14),
+    ...(!canUpload
+      ? [{
+        type: "appBanner",
+        message:
+          "Пять попыток на сегодня использованы. Текущее фото сохранено.",
+        tone: "warn",
+      }, gap(14)]
+      : []),
     {
       type: "appStateScope",
-      initial: { photo: "" },
+      initial: { photo: "", picking: false, saving: false },
       child: column([
         card([
           text("Новое фото", "heading"),
           gap(6),
           text(
-            "Сначала файл временно загружается платформой. После сохранения Искра переносит его в приватное хранилище.",
+            "JPEG, PNG или WebP до 5 МБ. Геоданные и служебные метаданные удаляются перед сохранением.",
             "subtext",
             "muted",
           ),
@@ -741,9 +982,15 @@ function photoScreen(profileValue: unknown): Widget {
               type: "expanded",
               child: button(
                 "Камера",
-                { actionType: "pickImage", saveAs: "photo", source: "camera" },
+                pickPhoto("camera"),
                 "primary",
-                { icon: "camera" },
+                {
+                  icon: "camera",
+                  loading: "{{state.picking}}",
+                  enabled: canUpload
+                    ? "{{!state.picking && !state.saving}}"
+                    : false,
+                },
               ),
             },
             { type: "sizedBox", width: 10 },
@@ -751,9 +998,15 @@ function photoScreen(profileValue: unknown): Widget {
               type: "expanded",
               child: button(
                 "Галерея",
-                { actionType: "pickImage", saveAs: "photo", source: "gallery" },
+                pickPhoto("gallery"),
                 "secondary",
-                { icon: "image" },
+                {
+                  icon: "image",
+                  loading: "{{state.picking}}",
+                  enabled: canUpload
+                    ? "{{!state.picking && !state.saving}}"
+                    : false,
+                },
               ),
             },
           ]),
@@ -770,18 +1023,38 @@ function photoScreen(profileValue: unknown): Widget {
                 semanticLabel: "Выбранное фото",
               },
               gap(12),
+              {
+                type: "appBanner",
+                message:
+                  "Фото выбрано. Проверь кадр и отправь его на модерацию.",
+                tone: "success",
+              },
+              gap(12),
               button(
                 "Отправить на проверку",
-                request(
-                  "/api/photo",
-                  { photoUrl: "{{state.photo}}" },
-                  multiple(
-                    toast("Фото отправлено", "success"),
-                    refreshPage("/photo", "Фото"),
+                multiple(
+                  setState("saving", true),
+                  request(
+                    "/api/photo",
+                    { photoUrl: "{{state.photo}}" },
+                    multiple(
+                      toast(
+                        "Фото сохранено и отправлено на проверку",
+                        "success",
+                      ),
+                      refreshPage("/photo", "Фото"),
+                    ),
+                    undefined,
+                    "saving",
                   ),
+                  setState("saving", false),
                 ),
                 "primary",
-                { icon: "send" },
+                {
+                  icon: "send",
+                  loading: "{{state.saving}}",
+                  enabled: "{{!state.saving && !state.picking}}",
+                },
               ),
             ]),
             else: text(
@@ -925,6 +1198,42 @@ function matchDetailScreen(matchesValue: unknown, id: string): Widget {
           })),
       },
     ]),
+    gap(12),
+    card([
+      row([
+        {
+          type: "expanded",
+          child: text("Обмен контактами", "headlineStrong"),
+        },
+        {
+          type: "appTag",
+          label: mutual
+            ? "Открыт"
+            : match.myConsent === true
+            ? "1 из 2"
+            : "По согласию",
+          tone: mutual ? "success" : "accent",
+          withDot: true,
+        },
+      ]),
+      gap(10),
+      {
+        type: "appProgressBar",
+        value: mutual ? 1 : match.myConsent === true ? 0.5 : 0,
+        color: mutual ? "success" : "accent",
+        height: 7,
+      },
+      gap(8),
+      text(
+        mutual
+          ? "Оба человека отдельно подтвердили обмен."
+          : match.myConsent === true
+          ? "Твоё согласие сохранено и его можно отозвать."
+          : "Telegram не передаётся до отдельного подтверждения каждого.",
+        "caption",
+        "muted",
+      ),
+    ], { tinted: true, radius: 20 }),
     gap(12),
     mutual
       ? card([
@@ -1241,6 +1550,34 @@ function settingsScreen(profileValue: unknown, stateValue: unknown): Widget {
       ]),
     ], { tinted: true }),
     gap(14),
+    ...(hasProfile
+      ? [
+        row([
+          {
+            type: "expanded",
+            child: {
+              type: "appSmartChip",
+              emoji: "💞",
+              label: "Мэтчи",
+              value: String(state.matchCount ?? 0),
+              tone: "accent",
+            },
+          },
+          { type: "sizedBox", width: 10 },
+          {
+            type: "expanded",
+            child: {
+              type: "appSmartChip",
+              emoji: "✨",
+              label: "Решений",
+              value: String(state.decisionsRemaining ?? 40),
+              tone: "success",
+            },
+          },
+        ]),
+        gap(14),
+      ]
+      : []),
     {
       type: "appListGroup",
       children: [
@@ -1267,6 +1604,18 @@ function settingsScreen(profileValue: unknown, stateValue: unknown): Widget {
           iconColor: "lecture",
           isFirst: isBanned || isRestricted || !hasProfile,
           onTap: openPage("/safety", "Безопасность"),
+        },
+        {
+          type: "appListRow",
+          title: "Поделиться Искрой",
+          subtitle: "Только для пользователей 18+",
+          icon: "share",
+          iconColor: "accent",
+          onTap: {
+            actionType: "share",
+            text:
+              "Искра — знакомства внутри MIREA Ninja. Открой раздел «Мини-аппы» → «Искра». Только 18+.",
+          },
         },
       ],
     },
@@ -1811,7 +2160,7 @@ export function buildScreen(
   if (path === "/profile") {
     return profileScreen(profile, state.isModerator === true);
   }
-  if (path === "/photo") return photoScreen(profile);
+  if (path === "/photo") return photoScreen(profile, state);
   if (path === "/matches") return matchesScreen(extra.matches);
   if (path === "/after-like") {
     return afterLikeScreen(extra.matches, stringOf(extra.id));

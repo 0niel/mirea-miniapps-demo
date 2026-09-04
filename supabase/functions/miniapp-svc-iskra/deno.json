@@ -1,7 +1,6 @@
 {
   "imports": {
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.110.2",
-    "fast-png": "npm:fast-png@8.0.0",
     "jpeg-js": "npm:jpeg-js@0.4.4"
   },
   "nodeModulesDir": "auto"

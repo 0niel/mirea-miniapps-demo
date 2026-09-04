@@ -264,60 +264,83 @@ async function savePrivatePhoto(
   );
   const reservationId = stringOf(reservation.reservationId, 36);
   if (!isUuid(reservationId)) throw new Error("Photo reservation failed");
-
-  const { data: source, error: downloadError } = await supabase.storage
-    .from("mini-app-uploads")
-    .download(temporaryPath);
-  if (downloadError || !source) {
-    throw new Error("Photo download failed");
-  }
-  await enqueueCleanup(
-    supabase,
-    userId,
-    "mini-app-uploads",
-    temporaryPath,
-  );
-  let sanitized;
+  let stage = "download";
   try {
-    sanitized = await sanitizeImage(source);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid photo";
-    return json(
-      {
-        error: message.includes("size")
-          ? "Invalid photo size"
-          : "Invalid photo",
-      },
-      message.includes("size") ? 413 : 422,
+    const { data: source, error: downloadError } = await supabase.storage
+      .from("mini-app-uploads")
+      .download(temporaryPath);
+    if (downloadError || !source) throw new Error("Photo download failed");
+    await enqueueCleanup(
+      supabase,
+      userId,
+      "mini-app-uploads",
+      temporaryPath,
     );
-  }
-
-  const privatePath = `profiles/${crypto.randomUUID()}.${sanitized.extension}`;
-  await enqueueCleanup(
-    supabase,
-    userId,
-    "iskra-photos",
-    privatePath,
-    300,
-  );
-  const { error: uploadError } = await supabase.storage
-    .from("iskra-photos")
-    .upload(privatePath, sanitized.bytes, {
-      contentType: sanitized.mime,
-      upsert: false,
-    });
-  if (uploadError) {
-    throw new Error("Photo upload failed");
-  }
-
-  try {
+    stage = "sanitize";
+    const sanitized = await sanitizeImage(source);
+    const privatePath =
+      `profiles/${crypto.randomUUID()}.${sanitized.extension}`;
+    await enqueueCleanup(
+      supabase,
+      userId,
+      "iskra-photos",
+      privatePath,
+      300,
+    );
+    stage = "upload";
+    const { error: uploadError } = await supabase.storage
+      .from("iskra-photos")
+      .upload(privatePath, sanitized.bytes, {
+        contentType: sanitized.mime,
+        upsert: false,
+      });
+    if (uploadError) throw new Error("Photo upload failed");
+    stage = "persist";
     await dispatch(supabase, userId, "set_photo", {
       path: privatePath,
       reservationId,
     });
     return json({ ok: true, status: "pending" }, 200);
   } catch (error) {
+    console.error(`Photo ${stage} failed`, error);
+    await cancelPhotoReservation(supabase, userId, reservationId);
+    await enqueueCleanup(
+      supabase,
+      userId,
+      "mini-app-uploads",
+      temporaryPath,
+    ).catch(() => undefined);
+    const message = error instanceof Error ? error.message : "Invalid photo";
+    if (
+      stage === "sanitize" || message.startsWith("Invalid photo") ||
+      message.includes("images")
+    ) {
+      const invalidType = message.includes("type");
+      return json(
+        {
+          error: message.includes("size")
+            ? "Invalid photo size"
+            : invalidType
+            ? "Unsupported photo type"
+            : message,
+          code: `photo_${stage}`,
+        },
+        message.includes("size") ? 413 : invalidType ? 415 : 422,
+      );
+    }
     throw error;
+  }
+}
+
+async function cancelPhotoReservation(
+  supabase: SupabaseClient,
+  userId: string,
+  reservationId: string,
+): Promise<void> {
+  try {
+    await dispatch(supabase, userId, "cancel_photo", { reservationId });
+  } catch (error) {
+    console.error("Photo reservation cleanup failed", error);
   }
 }
 

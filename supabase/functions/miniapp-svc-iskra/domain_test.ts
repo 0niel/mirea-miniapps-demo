@@ -96,6 +96,18 @@ Deno.test("primitive guards accept only intended values", () => {
   assertEquals(publicError("database unavailable").status, 500);
   assertEquals(publicError("Photo changed, refresh", "40001").status, 409);
   assertEquals(
+    publicError("permission denied for table users", "42501"),
+    { status: 403, message: "Действие недоступно" },
+  );
+  assertEquals(
+    publicError("Adult confirmation required", "42501"),
+    { status: 403, message: "Сначала подтверди, что тебе уже есть 18" },
+  );
+  assertEquals(
+    publicError("Profile required", "42501"),
+    { status: 403, message: "Сначала заверши настройку профиля" },
+  );
+  assertEquals(
     userTextOf("Привет {{storage.secret}}", 100),
     "Привет ‹‹storage.secret››",
   );

@@ -34,6 +34,7 @@ Deno.test("unconfigured users receive onboarding", () => {
   );
   assertEquals(screen.includes("Создай честную анкету"), true);
   assertEquals(screen.includes("/api/profile"), true);
+  assertEquals(screen.includes("^(?:1[89]|[2-9][0-9])$"), true);
 });
 
 Deno.test("moderators can review without publishing a dating profile", () => {
@@ -54,6 +55,7 @@ Deno.test("active home renders a candidate and safety action", () => {
     profile: { displayName: "Лев", status: "active", photoStatus: "none" },
     matchCount: 2,
     pendingLikes: 1,
+    decisionsRemaining: 17,
   }, {
     candidate: {
       publicId: "9fb788a6-05d1-48e9-b8a8-d966ac60c724",
@@ -62,11 +64,33 @@ Deno.test("active home renders a candidate and safety action", () => {
       status: "active",
       photoStatus: "none",
       interests: ["кино", "музыка"],
+      sharedInterests: ["музыка"],
+      sameIntent: true,
     },
   }));
   assertEquals(screen.includes("Аня, 21"), true);
   assertEquals(screen.includes("/api/decide"), true);
   assertEquals(screen.includes("/report?id="), true);
+  assertEquals(screen.includes("Сегодня осталось решений: 17 из 40"), true);
+  assertEquals(screen.includes("Общее · музыка"), true);
+  assertEquals(screen.includes("Одинаковая цель"), true);
+});
+
+Deno.test("photo flow exposes progress, supported formats, and busy states", () => {
+  const screen = serialized(buildScreen("/photo", {
+    adultConfirmed: true,
+    photosRemaining: 4,
+    profile: {
+      displayName: "Лев",
+      status: "active",
+      photoStatus: "none",
+    },
+  }));
+  assertEquals(screen.includes("JPEG, PNG или WebP"), true);
+  assertEquals(screen.includes("Одна попытка возвращается при ошибке"), true);
+  assertEquals(screen.includes('"picking":false'), true);
+  assertEquals(screen.includes('"saving":false'), true);
+  assertEquals(screen.includes("/api/photo"), true);
 });
 
 Deno.test("paused and banned states cannot browse discovery", () => {

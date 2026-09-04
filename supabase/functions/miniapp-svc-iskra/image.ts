@@ -1,11 +1,7 @@
-import { convertIndexedToRgb, decode as decodePng } from "fast-png";
-import type { DecodedPng } from "fast-png";
-import jpegJs from "jpeg-js";
-
 export type SanitizedImage = {
   bytes: Uint8Array;
-  mime: "image/jpeg" | "image/png";
-  extension: "jpg" | "png";
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  extension: "jpg" | "png" | "webp";
   width: number;
   height: number;
 };
@@ -13,14 +9,6 @@ export type SanitizedImage = {
 const maxBytes = 5_242_880;
 const maxDimension = 5000;
 const maxPixels = 13_000_000;
-const storedMaxDimension = 1024;
-
-type PixelImage = {
-  data: Uint8Array;
-  width: number;
-  height: number;
-};
-
 export async function sanitizeImage(source: Blob): Promise<SanitizedImage> {
   if (source.size === 0 || source.size > maxBytes) {
     throw new Error("Invalid photo size");
@@ -28,197 +16,58 @@ export async function sanitizeImage(source: Blob): Promise<SanitizedImage> {
   const input = new Uint8Array(await source.arrayBuffer());
   const orientation = jpegOrientation(input);
   const validated = sanitizeImageBytes(input);
-  let image: PixelImage;
-  try {
-    image = validated.mime === "image/jpeg"
-      ? decodeJpeg(validated.bytes)
-      : decodePngToRgba(validated.bytes);
-  } catch (error) {
-    throw new Error("Invalid photo encoding", { cause: error });
-  }
-  if (image.width !== validated.width || image.height !== validated.height) {
-    throw new Error("Invalid photo dimensions");
-  }
-  image = applyOrientation(image, orientation);
-  if (Math.max(image.width, image.height) > storedMaxDimension) {
-    const factor = storedMaxDimension / Math.max(image.width, image.height);
-    image = resizeBilinear(
-      image,
-      Math.max(1, Math.round(image.width * factor)),
-      Math.max(1, Math.round(image.height * factor)),
-    );
-  }
-  compositeTransparency(image.data);
-  const output = jpegJs.encode(image, 84).data;
+  if (validated.mime !== "image/jpeg" || orientation === 1) return validated;
+  const bytes = concat([
+    validated.bytes.slice(0, 2),
+    exifOrientationSegment(orientation),
+    validated.bytes.slice(2),
+  ]);
+  if (bytes.length > maxBytes) throw new Error("Invalid photo size");
   return {
-    bytes: Uint8Array.from(output),
-    mime: "image/jpeg",
-    extension: "jpg",
-    width: image.width,
-    height: image.height,
+    ...validated,
+    bytes,
   };
 }
 
-function decodeJpeg(bytes: Uint8Array): PixelImage {
-  const decoded = jpegJs.decode(bytes, {
-    useTArray: true,
-    formatAsRGBA: true,
-    maxResolutionInMP: 13,
-    maxMemoryUsageInMB: 64,
-  });
-  return {
-    data: Uint8Array.from(decoded.data),
-    width: decoded.width,
-    height: decoded.height,
-  };
-}
-
-function decodePngToRgba(bytes: Uint8Array): PixelImage {
-  const decoded = decodePng(bytes, { checkCrc: true });
-  if (decoded.depth !== 8) throw new Error("Unsupported PNG bit depth");
-  let channels = decoded.channels;
-  let source = decoded.data;
-  if (decoded.palette) {
-    source = convertIndexedToRgb(decoded);
-    channels = decoded.palette[0]?.length ?? 0;
-  }
-  if (channels < 1 || channels > 4) throw new Error("Invalid PNG channels");
-  const expected = decoded.width * decoded.height * channels;
-  if (source.length !== expected) throw new Error("Invalid PNG data length");
-  const output = new Uint8Array(decoded.width * decoded.height * 4);
-  for (let pixel = 0; pixel < decoded.width * decoded.height; pixel++) {
-    const input = pixel * channels;
-    const target = pixel * 4;
-    if (channels === 1 || channels === 2) {
-      const gray = source[input];
-      output[target] = gray;
-      output[target + 1] = gray;
-      output[target + 2] = gray;
-      output[target + 3] = channels === 2
-        ? source[input + 1]
-        : transparentGray(decoded, gray);
-    } else {
-      output[target] = source[input];
-      output[target + 1] = source[input + 1];
-      output[target + 2] = source[input + 2];
-      output[target + 3] = channels === 4
-        ? source[input + 3]
-        : transparentRgb(decoded, source, input);
-    }
-  }
-  return { data: output, width: decoded.width, height: decoded.height };
-}
-
-function transparentGray(decoded: DecodedPng, gray: number): number {
-  return decoded.transparency?.[0] === gray ? 0 : 255;
-}
-
-function transparentRgb(
-  decoded: DecodedPng,
-  data: ArrayLike<number>,
-  offset: number,
-): number {
-  const transparent = decoded.transparency;
-  return transparent?.length === 3 && transparent[0] === data[offset] &&
-      transparent[1] === data[offset + 1] &&
-      transparent[2] === data[offset + 2]
-    ? 0
-    : 255;
-}
-
-function applyOrientation(image: PixelImage, orientation: number): PixelImage {
-  if (orientation === 1) return image;
-  const swapped = orientation >= 5;
-  const width = swapped ? image.height : image.width;
-  const height = swapped ? image.width : image.height;
-  const output = new Uint8Array(width * height * 4);
-  for (let y = 0; y < image.height; y++) {
-    for (let x = 0; x < image.width; x++) {
-      let targetX = x;
-      let targetY = y;
-      if (orientation === 2) targetX = image.width - 1 - x;
-      if (orientation === 3) {
-        targetX = image.width - 1 - x;
-        targetY = image.height - 1 - y;
-      }
-      if (orientation === 4) targetY = image.height - 1 - y;
-      if (orientation === 5) {
-        targetX = y;
-        targetY = x;
-      }
-      if (orientation === 6) {
-        targetX = image.height - 1 - y;
-        targetY = x;
-      }
-      if (orientation === 7) {
-        targetX = image.height - 1 - y;
-        targetY = image.width - 1 - x;
-      }
-      if (orientation === 8) {
-        targetX = y;
-        targetY = image.width - 1 - x;
-      }
-      const source = (y * image.width + x) * 4;
-      const target = (targetY * width + targetX) * 4;
-      output.set(image.data.subarray(source, source + 4), target);
-    }
-  }
-  return { data: output, width, height };
-}
-
-function resizeBilinear(
-  image: PixelImage,
-  width: number,
-  height: number,
-): PixelImage {
-  const output = new Uint8Array(width * height * 4);
-  const xScale = image.width / width;
-  const yScale = image.height / height;
-  for (let y = 0; y < height; y++) {
-    const sourceY = Math.max(
-      0,
-      Math.min(image.height - 1, (y + 0.5) * yScale - 0.5),
-    );
-    const y0 = Math.floor(sourceY);
-    const y1 = Math.min(y0 + 1, image.height - 1);
-    const yWeight = sourceY - y0;
-    for (let x = 0; x < width; x++) {
-      const sourceX = Math.max(
-        0,
-        Math.min(image.width - 1, (x + 0.5) * xScale - 0.5),
-      );
-      const x0 = Math.floor(sourceX);
-      const x1 = Math.min(x0 + 1, image.width - 1);
-      const xWeight = sourceX - x0;
-      const target = (y * width + x) * 4;
-      for (let channel = 0; channel < 4; channel++) {
-        const top = image.data[(y0 * image.width + x0) * 4 + channel] *
-            (1 - xWeight) +
-          image.data[(y0 * image.width + x1) * 4 + channel] * xWeight;
-        const bottom = image.data[(y1 * image.width + x0) * 4 + channel] *
-            (1 - xWeight) +
-          image.data[(y1 * image.width + x1) * 4 + channel] * xWeight;
-        output[target + channel] = Math.round(
-          top * (1 - yWeight) + bottom * yWeight,
-        );
-      }
-    }
-  }
-  return { data: output, width, height };
-}
-
-function compositeTransparency(data: Uint8Array): void {
-  for (let offset = 0; offset < data.length; offset += 4) {
-    const alpha = data[offset + 3] / 255;
-    data[offset] = Math.round(data[offset] * alpha + 255 * (1 - alpha));
-    data[offset + 1] = Math.round(
-      data[offset + 1] * alpha + 255 * (1 - alpha),
-    );
-    data[offset + 2] = Math.round(
-      data[offset + 2] * alpha + 255 * (1 - alpha),
-    );
-    data[offset + 3] = 255;
-  }
+function exifOrientationSegment(orientation: number): Uint8Array {
+  return new Uint8Array([
+    0xff,
+    0xe1,
+    0x00,
+    0x22,
+    0x45,
+    0x78,
+    0x69,
+    0x66,
+    0x00,
+    0x00,
+    0x4d,
+    0x4d,
+    0x00,
+    0x2a,
+    0x00,
+    0x00,
+    0x00,
+    0x08,
+    0x00,
+    0x01,
+    0x01,
+    0x12,
+    0x00,
+    0x03,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    orientation,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ]);
 }
 
 function jpegOrientation(bytes: Uint8Array): number {
@@ -280,6 +129,10 @@ export function sanitizeImageBytes(bytes: Uint8Array): SanitizedImage {
   ) {
     return sanitizePng(bytes);
   }
+  if (
+    bytes.length >= 12 && ascii(bytes, 0, 4) === "RIFF" &&
+    ascii(bytes, 8, 12) === "WEBP"
+  ) return sanitizeWebp(bytes);
   throw new Error("Invalid photo type");
 }
 
@@ -355,7 +208,7 @@ function sanitizeJpeg(bytes: Uint8Array): SanitizedImage {
     position = segmentEnd;
   }
 
-  if (!width || !height || !sawScan || !sawEnd || position !== bytes.length) {
+  if (!width || !height || !sawScan || !sawEnd) {
     throw new Error("Invalid JPEG image");
   }
   return {
@@ -393,7 +246,15 @@ function sanitizePng(bytes: Uint8Array): SanitizedImage {
       width = readU32(bytes, position + 8);
       height = readU32(bytes, position + 12);
       assertDimensions(width, height);
+      const bitDepth = bytes[position + 16];
+      const colorType = bytes[position + 17];
+      const validDepth =
+        (colorType === 0 && [1, 2, 4, 8, 16].includes(bitDepth)) ||
+        (colorType === 2 && [8, 16].includes(bitDepth)) ||
+        (colorType === 3 && [1, 2, 4, 8].includes(bitDepth)) ||
+        ([4, 6].includes(colorType) && [8, 16].includes(bitDepth));
       if (
+        !validDepth ||
         bytes[position + 18] !== 0 || bytes[position + 19] !== 0 ||
         bytes[position + 20] > 1
       ) {
@@ -422,13 +283,87 @@ function sanitizePng(bytes: Uint8Array): SanitizedImage {
     if (sawEnd) break;
   }
 
-  if (!sawHeader || !sawData || !sawEnd || position !== bytes.length) {
+  if (!sawHeader || !sawData || !sawEnd) {
     throw new Error("Invalid PNG image");
   }
   return {
     bytes: concat(chunks),
     mime: "image/png",
     extension: "png",
+    width,
+    height,
+  };
+}
+
+function sanitizeWebp(bytes: Uint8Array): SanitizedImage {
+  if (readU32Le(bytes, 4) !== bytes.length - 8) {
+    throw new Error("Invalid WebP size");
+  }
+  const chunks: Uint8Array[] = [];
+  let position = 12;
+  let width = 0;
+  let height = 0;
+  let sawImage = false;
+  while (position + 8 <= bytes.length) {
+    const type = ascii(bytes, position, position + 4);
+    const length = readU32Le(bytes, position + 4);
+    const end = position + 8 + length;
+    const paddedEnd = end + (length & 1);
+    if (end > bytes.length || paddedEnd > bytes.length) {
+      throw new Error("Truncated WebP");
+    }
+    if (type === "ANIM" || type === "ANMF") {
+      throw new Error("Animated images are not supported");
+    }
+    if (type === "VP8X") {
+      if (length < 10 || (bytes[position + 8] & 0x02) !== 0) {
+        throw new Error("Invalid WebP header");
+      }
+      width = 1 + readU24Le(bytes, position + 12);
+      height = 1 + readU24Le(bytes, position + 15);
+      assertDimensions(width, height);
+      const chunk = bytes.slice(position, paddedEnd);
+      chunk[8] &= 0xd3;
+      chunks.push(chunk);
+    } else if (type === "VP8 ") {
+      if (
+        length < 10 || bytes[position + 11] !== 0x9d ||
+        bytes[position + 12] !== 0x01 || bytes[position + 13] !== 0x2a
+      ) throw new Error("Invalid WebP frame");
+      width = readU16Le(bytes, position + 14) & 0x3fff;
+      height = readU16Le(bytes, position + 16) & 0x3fff;
+      assertDimensions(width, height);
+      sawImage = true;
+      chunks.push(bytes.slice(position, paddedEnd));
+    } else if (type === "VP8L") {
+      if (length < 5 || bytes[position + 8] !== 0x2f) {
+        throw new Error("Invalid WebP frame");
+      }
+      width = 1 + bytes[position + 9] +
+        ((bytes[position + 10] & 0x3f) << 8);
+      height = 1 + ((bytes[position + 10] & 0xc0) >> 6) +
+        (bytes[position + 11] << 2) +
+        ((bytes[position + 12] & 0x0f) << 10);
+      assertDimensions(width, height);
+      sawImage = true;
+      chunks.push(bytes.slice(position, paddedEnd));
+    } else if (!["EXIF", "XMP ", "ICCP"].includes(type)) {
+      chunks.push(bytes.slice(position, paddedEnd));
+    }
+    position = paddedEnd;
+  }
+  if (!sawImage || !width || !height || position !== bytes.length) {
+    throw new Error("Invalid WebP image");
+  }
+  const body = concat(chunks);
+  const header = new Uint8Array(12);
+  header.set(new TextEncoder().encode("RIFF"), 0);
+  writeU32Le(header, 4, body.length + 4);
+  header.set(new TextEncoder().encode("WEBP"), 8);
+  return {
+    bytes: concat([header, body]),
+    mime: "image/webp",
+    extension: "webp",
     width,
     height,
   };
@@ -459,6 +394,33 @@ function readU32(bytes: Uint8Array, offset: number): number {
     bytes[offset] * 0x1000000 + bytes[offset + 1] * 0x10000 +
     bytes[offset + 2] * 0x100 + bytes[offset + 3]
   ) >>> 0;
+}
+
+function readU16Le(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] + bytes[offset + 1] * 0x100;
+}
+
+function readU24Le(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] + bytes[offset + 1] * 0x100 +
+    bytes[offset + 2] * 0x10000;
+}
+
+function readU32Le(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset] + bytes[offset + 1] * 0x100 +
+    bytes[offset + 2] * 0x10000 + bytes[offset + 3] * 0x1000000
+  ) >>> 0;
+}
+
+function writeU32Le(bytes: Uint8Array, offset: number, value: number): void {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function ascii(bytes: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...bytes.slice(start, end));
 }
 
 function crc32(bytes: Uint8Array): number {

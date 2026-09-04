@@ -2,7 +2,6 @@
   "version": "5",
   "specifiers": {
     "npm:@supabase/supabase-js@2.110.2": "2.110.2",
-    "npm:fast-png@8.0.0": "8.0.0",
     "npm:jpeg-js@0.4.4": "0.4.4"
   },
   "npm": {
@@ -51,21 +50,8 @@
         "@supabase/storage-js"
       ]
     },
-    "fast-png@8.0.0": {
-      "integrity": "sha512-gCysNasJ8KEMgfdYIKd/wTDo6ENK1PWT0RJO7O+0pgmuHPw2O6tA1WvdxFRJoLf9V8yFYpG0FA1YgI8X97OhJA==",
-      "dependencies": [
-        "fflate",
-        "iobuffer"
-      ]
-    },
-    "fflate@0.8.3": {
-      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
-    },
     "iceberg-js@0.8.1": {
       "integrity": "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA=="
-    },
-    "iobuffer@6.0.1": {
-      "integrity": "sha512-SZWYkWNfjIXIBYSDpXDYIgshqtbOPsi4lviawAEceR1Kqk+sHDlcQjWrzNQsii80AyBY0q5c8HCTNjqo74ul+Q=="
     },
     "jpeg-js@0.4.4": {
       "integrity": "sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg=="
@@ -77,7 +63,6 @@
   "workspace": {
     "dependencies": [
       "npm:@supabase/supabase-js@2.110.2",
-      "npm:fast-png@8.0.0",
       "npm:jpeg-js@0.4.4"
     ]
   }

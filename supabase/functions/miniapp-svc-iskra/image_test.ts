@@ -21,6 +21,8 @@ Deno.test("JPEG metadata is stripped and dimensions are retained", () => {
     3,
     0xff,
     0xd9,
+    0,
+    1,
   ]);
   const sanitized = sanitizeImageBytes(jpeg);
   assert(sanitized.mime === "image/jpeg", "JPEG MIME was not detected");
@@ -28,6 +30,10 @@ Deno.test("JPEG metadata is stripped and dimensions are retained", () => {
   assert(
     !new TextDecoder().decode(sanitized.bytes).includes("Exif"),
     "EXIF remained in sanitized output",
+  );
+  assert(
+    sanitized.bytes.at(-2) === 0xff && sanitized.bytes.at(-1) === 0xd9,
+    "JPEG trailing payload was retained",
   );
 });
 
@@ -59,7 +65,7 @@ Deno.test("spoofed and oversized-dimension images are rejected", () => {
   assert(dimensionsRejected, "Oversized dimensions were accepted");
 });
 
-Deno.test("PNG and JPEG are decoded and re-encoded as bounded JPEG", async () => {
+Deno.test("PNG remains displayable without metadata", async () => {
   const source = Uint8Array.from(
     atob(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -69,18 +75,23 @@ Deno.test("PNG and JPEG are decoded and re-encoded as bounded JPEG", async () =>
   const pngResult = await sanitizeImage(
     new Blob([source], { type: "application/octet-stream" }),
   );
-  assert(pngResult.mime === "image/jpeg", "PNG was not normalized to JPEG");
+  assert(pngResult.mime === "image/png", "PNG MIME was not retained");
   assert(
-    pngResult.bytes[0] === 0xff && pngResult.bytes[1] === 0xd8,
-    "Normalized output is not JPEG",
+    pngResult.bytes[0] === 0x89 && pngResult.bytes[1] === 0x50,
+    "Sanitized output is not PNG",
   );
-  const normalized = new Uint8Array(pngResult.bytes.length);
-  normalized.set(pngResult.bytes);
-  const jpegResult = await sanitizeImage(
-    new Blob([normalized.buffer], { type: "image/png" }),
+  assert(pngResult.width === 1 && pngResult.height === 1, "Wrong PNG size");
+});
+
+Deno.test("WebP photos are accepted and retain their dimensions", async () => {
+  const source = Uint8Array.from(
+    atob("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA"),
+    (character) => character.charCodeAt(0),
   );
-  assert(
-    jpegResult.width === 1 && jpegResult.height === 1,
-    "JPEG decode failed",
+  const result = await sanitizeImage(
+    new Blob([source], { type: "image/webp" }),
   );
+  assert(result.mime === "image/webp", "WebP MIME was not detected");
+  assert(result.extension === "webp", "Wrong WebP extension");
+  assert(result.width === 1 && result.height === 1, "Wrong WebP size");
 });

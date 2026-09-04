@@ -100,13 +100,18 @@ export function publicError(
       message: "Данные изменились. Обнови экран и повтори",
     };
   }
+  if (lower.includes("blocked") || lower.includes("moderator access")) {
+    return { status: 403, message: "Действие недоступно" };
+  }
+  if (lower.includes("adult confirmation")) {
+    return { status: 403, message: "Сначала подтверди, что тебе уже есть 18" };
+  }
   if (
-    code === "42501" || lower.includes("adult confirmation") ||
     lower.includes("profile required") || lower.includes("not active")
   ) {
     return { status: 403, message: "Сначала заверши настройку профиля" };
   }
-  if (lower.includes("blocked") || lower.includes("moderator access")) {
+  if (code === "42501") {
     return { status: 403, message: "Действие недоступно" };
   }
   if (
