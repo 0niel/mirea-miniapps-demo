@@ -1,0 +1,5 @@
+node_modules/
+.supabase/
+supabase/.temp/
+.env
+.env.*

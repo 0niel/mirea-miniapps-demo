@@ -1,0 +1,5 @@
+project_id = "ejzybbyjwtzbibrrwrli"
+
+[functions.miniapp-svc-iskra]
+verify_jwt = false
+import_map = "./functions/miniapp-svc-iskra/deno.json"
