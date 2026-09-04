@@ -412,9 +412,7 @@ begin
     return jsonb_build_object('ok', true);
   end if;
 
-  if p_user_id is null or not exists (
-    select 1 from auth.users u where u.id = p_user_id
-  ) then
+  if p_user_id is null then
     raise exception 'Invalid user' using errcode = '22023';
   end if;
 
