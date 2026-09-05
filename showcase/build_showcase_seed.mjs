@@ -134,7 +134,7 @@ const setStateExpr = (key, expression) => ({
   expression,
 });
 const setStorageA = (key, value) => ({ actionType: "setStorage", key, value });
-const multi = (actions) => ({ actionType: "multiAction", actions });
+const multi = (actions) => ({ actionType: "multiAction", actions, sync: true });
 const reload = () => ({ actionType: "reload" });
 const pop = () => ({ actionType: "pop" });
 const share = (t) => ({ actionType: "share", text: t });
@@ -184,6 +184,8 @@ const groups = [
   { path: "/calendar", title: "Календарь", subtitle: "Неделя, пары, дедлайны, месяц", icon: "calendar", color: BLUE, emoji: "📅" },
   { path: "/logic", title: "Логика", subtitle: "Выражения, условия, списки, состояние", icon: "spark", color: GREEN, emoji: "🧠" },
   { path: "/actions", title: "Действия", subtitle: "Тосты, диалоги, шторки, шеринг", icon: "send", color: ACCENT, emoji: "✨" },
+  { path: "/motion", title: "Анимации", subtitle: "Переходы, прозрачность, размеры и цвета", icon: "spark", color: VIOLET, emoji: "🪄" },
+  { path: "/async", title: "Загрузка и сохранение", subtitle: "Прогресс на кнопке и обновление текущего экрана", icon: "refresh", color: BLUE, emoji: "🔄" },
 ];
 const platform = [
   { path: "/navigation", title: "Навигация", subtitle: "Диплинки в приложение и другие аппы", icon: "map", color: VIOLET, emoji: "🧭" },
@@ -1109,7 +1111,7 @@ const actions = scaffold([
       sb(8),
       btn("Открыть mirea.ru", openUrl("https://www.mirea.ru"), { variant: "secondary", expanded: true, icon: "external" }),
       sb(8),
-      btn("Перезагрузить апп", reload(), { variant: "text", expanded: true, icon: "refresh" }),
+      btn("Обновить этот экран", reload(), { variant: "text", expanded: true, icon: "refresh", loadingLabel: "Обновляем…" }),
     ]),
   ),
   sb(20),
@@ -1133,7 +1135,9 @@ const navigation = scaffold([
     col([
       btn("Открыть под-экран", openPage("/buttons", "Кнопки"), { variant: "primary", expanded: true }),
       sb(8),
-      btn("Перезагрузить апп", reload(), { variant: "secondary", expanded: true }),
+      btn("Обновить этот экран", reload(), { variant: "secondary", expanded: true, loadingLabel: "Обновляем…" }),
+      sb(8),
+      btn("Вернуться к разделам", { actionType: "reload", target: "root" }, { variant: "text", expanded: true, loadingLabel: "Открываем разделы…" }),
     ]),
   ),
   sb(20),
@@ -1155,6 +1159,23 @@ const device = scaffold([
       ]),
       sb(12),
       capCard("camera", ACCENT, "Фото с камеры или галереи", [
+        {
+          type: "appImagePicker",
+          stateKey: "portrait",
+          statusKey: "portraitStatus",
+          errorKey: "portraitError",
+          label: "Фото профиля",
+          helperText: "Выбор, предпросмотр, замена и удаление в одном элементе",
+          allowCamera: true,
+          allowGallery: true,
+          height: 240,
+          onChanged: setStateA("lastPhotoEvent", { value: "Фото готово" }),
+          onRemoved: setStateA("lastPhotoEvent", { value: "Выбор очищен" }),
+          onError: setStateA("lastPhotoEvent", { value: "Можно повторить выбор" }),
+        },
+        sb(8),
+        text("{{state.lastPhotoEvent ?? 'Выбери снимок'}}", { variant: "caption", color: "muted" }),
+        overline("Действие pickImage отдельно"),
         roww([
           expanded(btn("Камера", pickImage("photo", "camera"), { expanded: true })),
           gap(10),
@@ -1209,6 +1230,110 @@ const device = scaffold([
   backButton,
 ]);
 
+const motion = scaffold([
+  section("Анимации", "Переходы следуют за состоянием экрана", { topMargin: 0 }),
+  scope(
+    { step: "first", expanded: false, visible: true },
+    col([
+      overline("Смена содержимого"),
+      { type: "appChipRow", stateKey: "step", items: [
+        { value: "first", label: "Выбор" },
+        { value: "second", label: "Проверка" },
+        { value: "third", label: "Готово" },
+      ] },
+      sb(12),
+      {
+        type: "appAnimatedSwitcher",
+        value: "{{state.step}}",
+        duration: 280,
+        transition: "slideUp",
+        child: appSwitch("state.step", [
+          { when: "first", child: card(col([text("1 · Выбери вариант", { variant: "heading" }), sb(6), text("Содержимое меняется без скачка всей страницы")]), { tinted: true }) },
+          { when: "second", child: card(col([text("2 · Проверь детали", { variant: "heading" }), sb(6), text("Предыдущая карточка плавно уступает место следующей")])) },
+          { when: "third", child: card(col([{ type: "appIconTile", icon: "check", color: GREEN }, sb(10), text("3 · Всё готово", { variant: "heading" })]), { tinted: true }) },
+        ]),
+      },
+      overline("Размер, цвет и скругление"),
+      { type: "appToggle", stateKey: "expanded", label: "Развернуть карточку" },
+      sb(12),
+      {
+        type: "appAnimatedContainer",
+        duration: 320,
+        height: "{{state.expanded ? 180 : 100}}",
+        radius: "{{state.expanded ? 28 : 16}}",
+        padding: "{{state.expanded ? 24 : 16}}",
+        color: "{{state.expanded ? 'accent' : 'surface2'}}",
+        child: text("Один элемент — два состояния", { variant: "heading", color: "{{state.expanded ? 'surface' : 'ink'}}" }),
+      },
+      overline("Прозрачность"),
+      { type: "appToggle", stateKey: "visible", label: "Показать подсказку" },
+      sb(12),
+      {
+        type: "appAnimatedOpacity",
+        opacity: "{{state.visible ? 1 : 0}}",
+        duration: 220,
+        child: { type: "appBanner", message: "Место сохраняется, содержимое плавно появляется", tone: "info" },
+      },
+      sb(16),
+      text("Если в настройках устройства уменьшено движение, переходы отключаются автоматически.", { variant: "caption", color: "muted" }),
+    ]),
+  ),
+  sb(20),
+  backButton,
+]);
+
+const asyncStates = scaffold([
+  section("Загрузка и сохранение", "Кнопка ждёт завершения действия", { topMargin: 0 }),
+  scope(
+    { draft: "", saved: "", demoBusy: false, revision: 1 },
+    col([
+      card(col([
+        { type: "appInputField", stateKey: "draft", label: "Тестовая заметка", placeholder: "Напиши несколько слов", maxLength: 160 },
+        sb(12),
+        btn("Сохранить заметку", multi([
+          setStorageA("showcaseNote", "{{state.draft}}"),
+          setStateExpr("saved", "state.draft"),
+          toast("Заметка сохранена", "success"),
+        ]), { expanded: true, icon: "check", loadingLabel: "Сохраняем…", enabled: "{{len(state.draft) > 0}}" }),
+        sb(8),
+        text("Запись хранится отдельно для твоего аккаунта.", { variant: "caption", color: "muted" }),
+      ])),
+      sb(12),
+      {
+        type: "appAnimatedSwitcher",
+        value: "{{state.saved}}",
+        duration: 180,
+        child: appIf("len(state.saved) > 0", { type: "appBanner", message: "Сохранено: {{state.saved}}", tone: "success" }),
+      },
+      overline("Обновление на месте"),
+      card(col([
+        text("Измени заметку и обнови экран: черновик останется в поле.", { variant: "body" }),
+        sb(12),
+        btn("Обновить данные", reload(), { expanded: true, variant: "secondary", icon: "refresh", loadingLabel: "Обновляем…" }),
+      ])),
+      overline("Загрузка отдельного блока"),
+      card(col([
+        text("Локальная демонстрация с задержкой 700 мс", { variant: "caption", color: "muted" }),
+        sb(12),
+        {
+          type: "appAnimatedSwitcher",
+          value: "{{state.demoBusy}}",
+          duration: 180,
+          child: appIf("state.demoBusy", { type: "appSkeleton", height: 56, radius: 12 }, smart("✨", "Версия блока", "{{state.revision}}", ACCENT)),
+        },
+        sb(12),
+        btn("Обновить блок", multi([
+          setStateA("demoBusy", { value: true }),
+          { actionType: "delay", milliseconds: 700 },
+          { actionType: "setState", values: { demoBusy: false, revision: "{{state.revision + 1}}" } },
+        ]), { expanded: true, loading: "{{state.demoBusy}}", loadingLabel: "Обновляем блок…" }),
+      ])),
+    ]),
+  ),
+  sb(20),
+  backButton,
+]);
+
 const screens = [
   { path: "/", title: "Витрина возможностей", json: home },
   { path: "/widgets", title: "Обзор", json: widgets },
@@ -1223,6 +1348,8 @@ const screens = [
   { path: "/actions", title: "Действия", json: actions },
   { path: "/navigation", title: "Навигация", json: navigation },
   { path: "/device", title: "Устройство", json: device },
+  { path: "/motion", title: "Анимации", json: motion },
+  { path: "/async", title: "Загрузка и сохранение", json: asyncStates },
 ];
 
 export const showcaseScreens = screens;
@@ -1239,6 +1366,7 @@ export const kitWidgetTypes = [
   "appServiceTile", "appSkeleton", "appSmartChip", "appSpinner", "appStateScope",
   "appStepper", "appSwitch", "appTabs", "appTag", "appText", "appToggle",
   "appTooltip", "appTypeTag", "appWeekStrip", "appIf", "appForEach", "appSwitch",
+  "appImagePicker", "appAnimatedSwitcher", "appAnimatedOpacity", "appAnimatedContainer",
 ];
 
 const q = (s) => s.replaceAll("'", "''");
