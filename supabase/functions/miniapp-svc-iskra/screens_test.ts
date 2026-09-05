@@ -10,6 +10,15 @@ function serialized(screen: unknown): string {
   return JSON.stringify(screen);
 }
 
+function nodes(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap(nodes);
+  if (!value || typeof value !== "object") return [];
+  return [
+    value as Record<string, unknown>,
+    ...Object.values(value).flatMap(nodes),
+  ];
+}
+
 Deno.test("adult gate is mandatory before every route", () => {
   const screen = serialized(buildScreen("/matches", { adultConfirmed: false }));
   assertEquals(screen.includes("Мне уже исполнилось 18 лет"), true);
@@ -88,9 +97,78 @@ Deno.test("photo flow exposes progress, supported formats, and busy states", () 
   }));
   assertEquals(screen.includes("JPEG, PNG или WebP"), true);
   assertEquals(screen.includes("Одна попытка возвращается при ошибке"), true);
-  assertEquals(screen.includes('"picking":false'), true);
+  assertEquals(screen.includes('"photoStatus":"idle"'), true);
   assertEquals(screen.includes('"saving":false'), true);
+  assertEquals(screen.includes('"type":"appImagePicker"'), true);
+  assertEquals(screen.includes("Фото не выбрано"), false);
   assertEquals(screen.includes("/api/photo"), true);
+});
+
+Deno.test("saved photo stays preview-only and upload uses the current selection", () => {
+  const all = nodes(buildScreen("/photo", {
+    adultConfirmed: true,
+    photosRemaining: 4,
+    profile: {
+      displayName: "Лев",
+      status: "active",
+      photoStatus: "pending",
+      photoUrl: "https://example.test/saved.jpg",
+    },
+  }));
+  const picker = all.find((node) => node.type === "appImagePicker")!;
+  const scope = all.find((node) => node.type === "appStateScope")!;
+  const upload = all.find((node) => node.url === "/api/photo")!;
+  assertEquals(picker.initialUrl, "https://example.test/saved.jpg");
+  assertEquals(picker.allowRemove, "{{len(state.photo) > 0}}");
+  assertEquals(picker.allowRemoveInitial, false);
+  assertEquals((scope.initial as Record<string, unknown>).photo, "");
+  assertEquals(
+    (upload.body as Record<string, unknown>).photoUrl,
+    "{{state.photo}}",
+  );
+  assertEquals(upload.loadingKey, "saving");
+  assertEquals(upload.errorKey, "savingError");
+  assertEquals(
+    (upload.onError as Record<string, unknown>).actionType,
+    "showToast",
+  );
+  assertEquals((upload.onFinally as Record<string, unknown>).value, false);
+  assertEquals(all.some((node) => node.actionType === "pop"), false);
+  assertEquals(all.some((node) => node.actionType === "reload"), true);
+});
+
+Deno.test("profile save reports progress and refreshes without route replacement", () => {
+  const all = nodes(buildScreen("/profile", {
+    adultConfirmed: true,
+    profile: { displayName: "Лев", status: "active", age: 21 },
+  }));
+  const save = all.find((node) => node.url === "/api/profile")!;
+  const button = all.find((node) => node.label === "Сохранить изменения")!;
+  assertEquals(button.loadingLabel, "Сохраняем анкету…");
+  assertEquals(save.loadingKey, "profileSaving");
+  assertEquals((save.onFinally as Record<string, unknown>).value, false);
+  assertEquals(nodes(save).some((node) => node.actionType === "reload"), true);
+  assertEquals(nodes(save).some((node) => node.actionType === "pop"), false);
+  assertEquals(
+    nodes(save).some((node) => node.actionType === "openPage"),
+    false,
+  );
+});
+
+Deno.test("exhausted photo quota disables picker and submit", () => {
+  const all = nodes(buildScreen("/photo", {
+    adultConfirmed: true,
+    photosRemaining: 0,
+    profile: { displayName: "Лев", status: "active", photoStatus: "approved" },
+  }));
+  assertEquals(
+    all.find((node) => node.type === "appImagePicker")!.enabled,
+    false,
+  );
+  assertEquals(
+    all.find((node) => node.label === "Отправить на проверку")!.enabled,
+    false,
+  );
 });
 
 Deno.test("paused and banned states cannot browse discovery", () => {
@@ -155,6 +233,25 @@ Deno.test("after-like state distinguishes a new mutual match", () => {
   assertEquals(sent.includes("Симпатия отправлена"), true);
   assertEquals(matched.includes("Это взаимно"), true);
   assertEquals(matched.includes("/match?id=match-id"), true);
+});
+
+Deno.test("return-home flows refresh the root without guessing navigation depth", () => {
+  const state = {
+    adultConfirmed: true,
+    profile: { displayName: "Лев", status: "active" },
+  };
+  for (const path of ["/after-like", "/report", "/settings", "/missing"]) {
+    const all = nodes(
+      buildScreen(path, state, { id: "public-target", origin: "match" }),
+    );
+    assertEquals(all.some((node) => node.actionType === "pop"), false);
+    assertEquals(
+      all.some((node) =>
+        node.actionType === "reload" && node.target === "root"
+      ),
+      true,
+    );
+  }
 });
 
 Deno.test("moderation actions carry immutable targets", () => {
