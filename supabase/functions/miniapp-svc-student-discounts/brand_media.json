@@ -1,0 +1,54 @@
+{
+  "autodesk-education": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/autodesk-education-7b02e4fccdab.png",
+    "media_alt": "Autodesk"
+  },
+  "datacamp-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/datacamp-student-34def0594ebe.jpg",
+    "media_alt": "DataCamp"
+  },
+  "figma-education": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/figma-education-b418ebb4a1d9.png",
+    "media_alt": "Figma"
+  },
+  "frontendmasters-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/frontendmasters-student-526ba4d05b68.jpg",
+    "media_alt": "Frontend Masters"
+  },
+  "garage-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/garage-student-e2a86454ed73.png",
+    "media_alt": "Музей «Гараж»"
+  },
+  "github-pro": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/github-pro-3f2eb02545ca.png",
+    "media_alt": "GitHub"
+  },
+  "jetbrains-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/jetbrains-student-de781d376a4f.png",
+    "media_alt": "JetBrains"
+  },
+  "moscow-student-transport": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/moscow-student-transport-bf0170bf2dc7.png",
+    "media_alt": "Мосгортранс"
+  },
+  "mumu-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/mumu-student-d1094265b8c7.png",
+    "media_alt": "МУ-МУ"
+  },
+  "onepassword-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/onepassword-student-7fa32d128a53.png",
+    "media_alt": "1Password"
+  },
+  "spb-student-trains": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/spb-student-trains-c6d13006e477.jpg",
+    "media_alt": "РЖД — Северо-Западная ППК"
+  },
+  "tretyakov-student-sunday": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/tretyakov-student-sunday-49c85d0aa209.png",
+    "media_alt": "Третьяковская галерея"
+  },
+  "unity-student": {
+    "media_url": "https://raw.githubusercontent.com/0niel/mirea-miniapps-demo/main/discounts/media/unity-student-2966da5caed8.png",
+    "media_alt": "Unity"
+  }
+}

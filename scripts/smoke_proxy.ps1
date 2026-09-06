@@ -45,7 +45,7 @@ function Get-ScreenNodes([object]$Value) {
 }
 
 function Assert-ScreenText([object]$Screen,[string]$Expected) {
-  $found = @(Get-ScreenNodes $Screen | Where-Object { $_.type -eq 'appText' -and $_.data -eq $Expected })
+  $found = @(Get-ScreenNodes $Screen | Where-Object { ($_.type -eq 'appText' -and $_.data -eq $Expected) -or ($_.type -eq 'appSectionTitle' -and $_.title -eq $Expected) })
   if (-not $Expected -or $found.Count -eq 0) { throw 'Expected screen content was not returned' }
 }
 
@@ -77,17 +77,18 @@ function Save-TestScreen([string]$Slug,[string]$Path,[string]$Name) {
 try {
   $catalog = @(Invoke-TestQuery "select count(*) as available from core.mini_apps where organization_id='mirea' and slug in ('learning-roadmap','student-discounts') and status='published';")[0]
   if ($catalog.available -ne 2) { throw 'Both mini apps must be published before live verification' }
-  $plan = @(Invoke-TestQuery "select p.id, p.title, d->>'id' as discipline_id, d->>'name' as discipline_name from miniapp_learning_roadmap.plans p cross join lateral jsonb_array_elements(p.document->'disciplines') d where p.quality='complete' and coalesce(d->>'is_optional','false')='false' and coalesce(d->>'choice_group','')='' order by p.admission_year desc nulls last, p.id, d->>'id' limit 1;")[0]
+  $plan = @(Invoke-TestQuery "with alternatives as (select p.id,p.title,p.quality,p.admission_year,d->>'choice_group' as choice_group,d->'semester' as semester,jsonb_agg(d order by d->>'id') as subjects from miniapp_learning_roadmap.plans p cross join lateral jsonb_array_elements(p.document->'disciplines') d where p.quality in ('complete','partial') and coalesce(d->>'choice_group','')<>'' group by p.id,p.title,p.quality,p.admission_year,d->>'choice_group',d->'semester' having count(*)>=2) select id,title,subjects->0->>'id' as discipline_id,subjects->0->>'name' as discipline_name,subjects->1->>'id' as alternative_id,subjects->1->>'name' as alternative_name from alternatives order by (quality='complete') desc,admission_year desc nulls last,id,choice_group,semester limit 1;")[0]
   $discount = @(Invoke-TestQuery "select id from miniapp_student_discounts.offers where status='active' and retired_at is null and (content->>'valid_until' is null or (content->>'valid_until')::date >= (now() at time zone 'Europe/Moscow')::date) order by id limit 1;")[0]
-  if (-not $plan.id -or -not $discount.id) { throw 'Live catalog is empty' }
+  if (-not $plan.id -or -not $plan.alternative_id -or -not $discount.id) { throw 'Live catalogs must contain a discipline choice and an active offer' }
   $creation = "begin; insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,confirmation_token,recovery_token,email_change_token_new,email_change,email_change_token_current,reauthentication_token,phone_change,phone_change_token,raw_app_meta_data,raw_user_meta_data) values('$testUser','00000000-0000-0000-0000-000000000000','authenticated','authenticated','$testEmail',extensions.crypt('$testPassword',extensions.gen_salt('bf')),now(),now(),now(),'','','','','','','','',jsonb_build_object('provider','email','providers',jsonb_build_array('email')),'{}'); insert into auth.identities(id,provider_id,user_id,identity_data,provider,created_at,updated_at) values(gen_random_uuid(),'$testUser','$testUser',jsonb_build_object('sub','$testUser','email','$testEmail','email_verified',true),'email',now(),now()); commit;"
   $testCreated = $true
   Invoke-TestQuery $creation | Out-Null
   $testHeaders = Start-TestSession
   Save-TestScreen 'learning-roadmap' '/catalog' 'learning-live-catalog.json' | Out-Null
   Invoke-TestProxy 'learning-roadmap' '/api/select' 'api' @{id=$plan.id} | Out-Null
-  Invoke-TestProxy 'learning-roadmap' '/api/completed' 'api' @{id=$plan.id;discipline_id=$plan.discipline_id;completed=$true} | Out-Null
+  Invoke-TestProxy 'learning-roadmap' '/api/chosen' 'api' @{id=$plan.id;discipline_id=$plan.discipline_id;chosen=$true;scope='semester'} | Out-Null
   Invoke-TestProxy 'learning-roadmap' '/api/note' 'api' @{id=$plan.id;discipline_id=$plan.discipline_id;note=$testNote} | Out-Null
+  Invoke-TestProxy 'learning-roadmap' '/api/chosen' 'api' @{id=$plan.id;discipline_id=$plan.alternative_id;chosen=$true;scope='semester'} | Out-Null
   $discountHome = Save-TestScreen 'student-discounts' '/' 'discounts-live-home.json'
   if (@($discountHome.body.initial.listing.items).Count -eq 0) { throw 'The discounts home screen has no offers' }
   Invoke-TestProxy 'student-discounts' '/api/favorite' 'api' @{id=$discount.id;saved=$true} | Out-Null
@@ -96,13 +97,18 @@ try {
   Assert-ScreenText $learningHome $plan.title
   $planScreen = Save-TestScreen 'learning-roadmap' ("/plan?id=" + [Uri]::EscapeDataString($plan.id)) 'learning-live-plan.json'
   Assert-ScreenText $planScreen $plan.title
-  if (@(Get-ScreenNodes $planScreen | Where-Object { $_.type -eq 'appButton' -and $_.label -eq 'Это мой учебный план' }).Count -ne 1) {
-    throw 'The selected plan was not restored in the new session'
-  }
   $disciplineScreen = Save-TestScreen 'learning-roadmap' ("/discipline?id=" + [Uri]::EscapeDataString($plan.id) + '&discipline=' + [Uri]::EscapeDataString($plan.discipline_id)) 'learning-live-discipline.json'
   Assert-ScreenText $disciplineScreen $plan.discipline_name
-  if ($disciplineScreen.initial.note -ne $testNote -or @(Get-ScreenNodes $disciplineScreen | Where-Object { $_.actionType -eq 'networkRequest' -and $_.body.id -eq $plan.id -and $_.body.discipline_id -eq $plan.discipline_id -and $_.body.completed -ceq $false }).Count -ne 1) {
-    throw 'The saved note or completion was not restored in the discipline screen'
+  if ($disciplineScreen.initial.note -ne $testNote) {
+    throw 'The saved note was not restored after changing the selected alternative'
+  }
+  if (@(Get-ScreenNodes $disciplineScreen | Where-Object { $_.actionType -eq 'networkRequest' -and $_.body.id -eq $plan.id -and $_.body.discipline_id -eq $plan.discipline_id -and $_.body.chosen -ceq $true }).Count -lt 1) {
+    throw 'The previous alternative still appears selected'
+  }
+  $choiceScreen = Save-TestScreen 'learning-roadmap' ("/discipline?id=" + [Uri]::EscapeDataString($plan.id) + '&discipline=' + [Uri]::EscapeDataString($plan.alternative_id)) 'learning-live-choice.json'
+  Assert-ScreenText $choiceScreen $plan.alternative_name
+  if (@(Get-ScreenNodes $choiceScreen | Where-Object { $_.actionType -eq 'networkRequest' -and $_.body.id -eq $plan.id -and $_.body.discipline_id -eq $plan.alternative_id -and $_.body.chosen -ceq $false }).Count -lt 1) {
+    throw 'The selected alternative was not restored in the new session'
   }
   $favoritesScreen = Save-TestScreen 'student-discounts' '/favorites' 'discounts-live-favorites.json'
   if (@($favoritesScreen.body.initial.listing.items | Where-Object { $_.id -eq $discount.id -and $_.saved -ceq $true }).Count -ne 1) {
@@ -130,8 +136,8 @@ try {
   if (@(Get-ScreenNodes $suggestionsScreen | Where-Object { $_.type -eq 'appBadge' -and $_.label -eq 'Отозвано' }).Count -ne 1) {
     throw 'The withdrawn suggestion was not reflected in its screen'
   }
-  $state = @(Invoke-TestQuery "select (select count(*) from miniapp_learning_roadmap.progress where user_id='$testUser' and completed and note='$testNote') as progress, (select count(*) from miniapp_student_discounts.favorites where user_id='$testUser') as favorites, (select count(*) from miniapp_student_discounts.suggestions where user_id='$testUser' and status='withdrawn') as withdrawn;")[0]
-  if ($state.progress -ne 1 -or $state.favorites -ne 1) { throw 'State did not survive a fresh session' }
+  $state = @(Invoke-TestQuery "select (select count(*) from miniapp_learning_roadmap.preferences where user_id='$testUser' and plan_id='$($plan.id)') as selected_plan, (select count(*) from miniapp_learning_roadmap.progress where user_id='$testUser' and plan_id='$($plan.id)' and discipline_id='$($plan.discipline_id)' and note='$testNote' and not chosen) as notes, (select count(*) from miniapp_learning_roadmap.progress where user_id='$testUser' and chosen) as choices, (select count(*) from miniapp_learning_roadmap.progress where user_id='$testUser' and plan_id='$($plan.id)' and discipline_id='$($plan.alternative_id)' and chosen) as selected_alternative, (select count(*) from miniapp_student_discounts.favorites where user_id='$testUser') as favorites, (select count(*) from miniapp_student_discounts.suggestions where user_id='$testUser' and status='withdrawn') as withdrawn;")[0]
+  if ($state.selected_plan -ne 1 -or $state.notes -ne 1 -or $state.choices -ne 1 -or $state.selected_alternative -ne 1 -or $state.favorites -ne 1) { throw 'The selected plan, notes, alternative choice or favorites did not survive a fresh session' }
   if ($state.withdrawn -ne 1) { throw 'The suggestion was not withdrawn' }
   foreach ($slug in @('learning-roadmap','student-discounts')) {
     $unauthorized = Invoke-WebRequest -Uri "$appUrl/functions/v1/miniapp-svc-$slug" -Method Post -ContentType 'application/json' -Body '{}' -SkipHttpErrorCheck
@@ -156,4 +162,3 @@ try {
 }
 $evidence | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $evidenceDirectory 'report.json') -Encoding utf8
 $evidence | ConvertTo-Json -Depth 5
-

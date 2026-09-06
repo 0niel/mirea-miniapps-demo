@@ -34,6 +34,9 @@ jobs:
       - run: python -m unittest discover -s curriculum/tests -v
       - run: python -m unittest discover -s discounts/tests -v
       - name: Parse current curricula
+        env:
+          MIREA_SOURCE_RELAY_URL: ${{ vars.MIREA_SOURCE_RELAY_URL }}
+          MIREA_SOURCE_RELAY_TOKEN: ${{ secrets.MIREA_SOURCE_RELAY_TOKEN }}
         run: python curriculum/sync.py --workers 4 --parse-workers 2
       - name: Validate parsed curricula
         run: python curriculum/verify.py

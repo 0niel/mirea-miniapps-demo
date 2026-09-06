@@ -23,6 +23,13 @@ const screens = {
   electives: buildScreen("/semester", sampleData, { semester: "2" }),
   discipline: buildScreen("/discipline", sampleData, { discipline: "math-1" }),
   elective: buildScreen("/discipline", sampleData, { discipline: "sport-b-2" }),
+  elective_selected: buildScreen("/discipline", sampleData, {
+    discipline: "sport-a-2",
+  }),
+  facultative: buildScreen("/discipline", sampleData, {
+    discipline: "optional-2",
+  }),
+  load_range: buildScreen("/semester", sampleData, { semester: "3" }),
   reminder: buildScreen("/reminder", sampleData, { discipline: "math-1" }),
   compare: buildScreen("/compare", sampleData),
   unavailable: buildScreen("/plan", {
@@ -32,11 +39,11 @@ const screens = {
   error: errorScreen(),
   parser_exams: buildScreen("/semester", {
     plan: parserPlanSample,
-    progress: [],
+    records: [],
   }, { semester: "1", filter: "exam" }),
   parser_choice: buildScreen("/discipline", {
     plan: parserPlanSample,
-    progress: [],
+    records: [],
   }, { discipline: "eae09f29a374fddc154a690b136c6bbf" }),
   compare_unavailable: buildScreen("/compare", {
     plan: samplePlan,
@@ -49,7 +56,18 @@ const screens = {
   }),
 };
 const filtersOpen = buildScreen("/catalog", catalogData);
+const planDataOpen = buildScreen("/plan", sampleData);
+planDataOpen.initial = {
+  ...objectOf(planDataOpen.initial),
+  planDataOpen: true,
+};
 filtersOpen.initial = { ...objectOf(filtersOpen.initial), filtersOpen: true };
+const filtersAdvanced = buildScreen("/catalog", catalogData);
+filtersAdvanced.initial = {
+  ...objectOf(filtersAdvanced.initial),
+  filtersOpen: true,
+  programFiltersOpen: true,
+};
 const reminderReady = buildScreen("/reminder", sampleData, {
   discipline: "math-1",
 });
@@ -58,7 +76,9 @@ reminderReady.initial = {
   studyDate: "2027-01-12T14:00:00",
 };
 Object.assign(screens, {
+  plan_data_open: planDataOpen,
   catalog_filters_open: filtersOpen,
+  catalog_filters_advanced: filtersAdvanced,
   reminder_ready: reminderReady,
 });
 for (const [name, screen] of Object.entries(screens)) {

@@ -35,7 +35,6 @@ Deno.test("native screens use bounded paginated content and supported action con
     "wrap",
     "appTag",
     "appButton",
-    "appProgressBar",
     "appInputField",
     "appSelectField",
     "appChip",
@@ -59,6 +58,11 @@ Deno.test("native screens use bounded paginated content and supported action con
     "setState",
   ]);
   for (const screen of screens) {
+    assert(
+      !/completed|progress|Впереди|Отмечено|отмечать/i.test(
+        JSON.stringify(screen),
+      ),
+    );
     assert(new TextEncoder().encode(JSON.stringify(screen)).length < 512000);
     for (const n of nodes(screen)) {
       if (typeof n.type === "string") assert(widgets.has(n.type), n.type);
@@ -80,7 +84,55 @@ Deno.test("native screens use bounded paginated content and supported action con
     }
   }
 });
-Deno.test("2000 subjects remain bounded and elective alternatives never inflate progress", () => {
+Deno.test("choice changes preserve notes and expose separate semester and subject scope", () => {
+  const screen = buildScreen("/discipline", {
+    ...sampleData,
+    records: [
+      { discipline_id: "sport-a-2", chosen: false, note: "Моя заметка" },
+      { discipline_id: "sport-b-2", chosen: true },
+    ],
+  }, { discipline: "sport-a-2" });
+  assert((screen.initial as Json).note === "Моя заметка");
+  const choices = nodes(screen).filter((n) =>
+    n.actionType === "networkRequest" && n.url === "/api/chosen"
+  );
+  assert(choices.length === 2);
+  assert(choices.every((n) => (n.body as Json).chosen === true));
+  assert(choices.some((n) => (n.body as Json).scope === "semester"));
+  assert(choices.some((n) => (n.body as Json).scope === "subject"));
+  const selected = buildScreen("/discipline", sampleData, {
+    discipline: "sport-a-2",
+  });
+  assert(
+    nodes(selected).some((n) =>
+      n.url === "/api/chosen" && (n.body as Json).chosen === false
+    ),
+  );
+  const mandatory = buildScreen("/discipline", sampleData, {
+    discipline: "math-1",
+  });
+  assert(!nodes(mandatory).some((n) => n.url === "/api/chosen"));
+});
+Deno.test("saved plan opens directly into compact semester navigation and filters are staged", () => {
+  const screen = buildScreen("/", sampleData);
+  const sections = nodes(screen).filter((n) => n.type === "appSectionTitle");
+  assert(sections[0].title === samplePlan.title);
+  assert(!nodes(screen).some((n) => n.type === "appCard" && n.tinted === true));
+  assert(
+    nodes(screen).some((n) =>
+      n.type === "appCard" &&
+      (n.onTap as Json)?.path === "/semester?id=sample-plan-a&semester=1"
+    ),
+  );
+  const catalog = buildScreen("/catalog", catalogData);
+  assert((catalog.initial as Json).filtersOpen === false);
+  assert(
+    nodes(catalog).some((n) =>
+      n.type === "appIf" && n.condition === "state.programFiltersOpen"
+    ),
+  );
+});
+Deno.test("2000 subjects remain bounded with pagination preserve bounded screen size", () => {
   const huge: Plan = {
     ...samplePlan,
     disciplines: Array.from(
@@ -92,11 +144,14 @@ Deno.test("2000 subjects remain bounded and elective alternatives never inflate 
       }),
     ),
   };
-  const screen = buildScreen("/semester", { plan: huge, progress: [] }, {
+  const screen = buildScreen("/semester", { plan: huge, records: [] }, {
     semester: "1",
   });
   assert(
-    nodes(screen).filter((n) => n.label === "Открыть предмет").length === 20,
+    nodes(screen).filter((n) =>
+      n.type === "appCard" &&
+      String((n.onTap as Json)?.path).startsWith("/discipline?")
+    ).length === 20,
   );
   assert(new TextEncoder().encode(JSON.stringify(screen)).length < 100000);
 });
@@ -134,7 +189,7 @@ Deno.test("external title and notes cannot inject state expressions", () => {
       title: "{{storage.secret}}",
       disciplines: [{ ...samplePlan.disciplines[0], name: "{{user.id}}" }],
     },
-    progress: [{ discipline_id: "math-1", note: "{{storage.secret}}" }],
+    records: [{ discipline_id: "math-1", note: "{{storage.secret}}" }],
   }, { discipline: "math-1" });
   const serialized = JSON.stringify(screen);
   assert(!serialized.includes("{{storage.") && !serialized.includes("{{user."));
@@ -142,12 +197,15 @@ Deno.test("external title and notes cannot inject state expressions", () => {
 Deno.test("real parser exams appear under the exams filter with Russian control labels", () => {
   const screen = buildScreen("/semester", {
     plan: parserPlanSample,
-    progress: [],
+    records: [],
   }, { semester: "1", filter: "exam" });
   const serialized = JSON.stringify(screen);
   assert(serialized.includes("Информатика") && serialized.includes("Экзамен"));
   assert(
-    nodes(screen).filter((n) => n.label === "Открыть предмет").length === 1,
+    nodes(screen).filter((n) =>
+      n.type === "appCard" &&
+      String((n.onTap as Json)?.path).startsWith("/discipline?")
+    ).length === 1,
   );
 });
 Deno.test("unavailable plans do not produce misleading one-sided comparisons", () => {

@@ -1,11 +1,13 @@
 import {
+  chosenIds,
   comparePlans,
   constantTimeEqual,
   literal,
   parseRoute,
   planOf,
-  progressOf,
+  relatedSubjects,
   sourceUrl,
+  workloadOf,
 } from "./domain.ts";
 import {
   otherPlan,
@@ -71,20 +73,53 @@ Deno.test("comparison matches names instead of reused source codes and retains u
     changed.find((x) => x.name === "Проектная практика")?.status === "changed",
   );
 });
-Deno.test("progress counts one alternative, excludes unselected electives and stale records", () => {
-  const p = progressOf(samplePlan, sampleData.progress);
-  assert(p.total === 4 && p.done === 1 && p.undecided === 0);
-  const empty = progressOf(samplePlan, [{
-    discipline_id: "optional-2",
-    completed: true,
-  }, { discipline_id: "deleted", completed: true }]);
-  assert(empty.total === 4 && empty.done === 0 && empty.undecided === 1);
-  const selected = progressOf(samplePlan, [{
-    discipline_id: "optional-2",
-    completed: true,
+Deno.test("workload counts one alternative per semester and only selected facultatives", () => {
+  const chosen = chosenIds(samplePlan, sampleData.records);
+  const rows = samplePlan.disciplines.filter((d) => d.semester === 2);
+  const load = workloadOf(rows, chosen);
+  assert(load.subjects === 1 && load.groups === 1 && load.undecided === 0);
+  assert(
+    load.hours.min === 72 && load.hours.max === 72 && load.credits.min === 0,
+  );
+  const empty = workloadOf(rows, new Set());
+  assert(
+    empty.subjects === 1 && empty.undecided === 1 && empty.hours.min === 72,
+  );
+  const selected = workloadOf(rows, new Set(["optional-2", "sport-b-2"]));
+  assert(
+    selected.subjects === 2 && selected.optional === 1 &&
+      selected.hours.min === 108 && selected.credits.min === 1,
+  );
+  const stale = chosenIds(samplePlan, [{
+    discipline_id: "deleted",
     chosen: true,
-  }]);
-  assert(selected.total === 5 && selected.done === 1);
+  }, { discipline_id: "math-1", chosen: true }]);
+  assert(stale.size === 0);
+});
+Deno.test("unknown alternatives preserve ranges and multi-semester groups never collapse into one", () => {
+  const rows = samplePlan.disciplines.filter((d) => d.choice_group);
+  const load = workloadOf(rows, new Set());
+  assert(load.subjects === 2 && load.groups === 2 && load.undecided === 2);
+  assert(load.hours.min === 144 && load.hours.max === 180);
+  const selected = workloadOf(rows, new Set(["sport-a-2", "sport-b-3"]));
+  assert(selected.hours.min === 180 && selected.hours.max === 180);
+  const unknown = workloadOf(
+    rows.map((d) => d.id === "sport-b-3" ? { ...d, hours: null } : d),
+    new Set(),
+  );
+  assert(unknown.hours.min === null && unknown.hours.max === null);
+  const related = relatedSubjects(samplePlan, samplePlan.disciplines[2]);
+  assert(
+    related.length === 2 && related.every((d) => d.subject_id === "sport-a"),
+  );
+});
+Deno.test("facultative choice groups stay outside load until exactly one is selected", () => {
+  const rows = samplePlan.disciplines.filter((d) =>
+    d.semester === 2 && d.choice_group
+  ).map((d) => ({ ...d, is_optional: true, kind: "elective" }));
+  assert(workloadOf(rows, new Set()).subjects === 0);
+  const load = workloadOf(rows, new Set(rows.map((d) => d.id)));
+  assert(load.subjects === 1 && load.optional === 1 && load.hours.min === 72);
 });
 Deno.test("routes retain query and prefer actual path over duplicate query fields", () => {
   const r = parseRoute("/plan?id=one", {
@@ -103,8 +138,8 @@ Deno.test("real parser control enums and mandatory sports alternatives retain th
   assert(plan.disciplines[0].control_forms[0] === "Экзамен");
   assert(plan.disciplines[1].control_forms[0] === "Зачёт");
   assert(plan.disciplines[1].is_optional === false);
-  const progress = progressOf(plan, []);
-  assert(progress.total === 2 && progress.undecided === 1);
+  const load = workloadOf(plan.disciplines, new Set());
+  assert(load.subjects === 2 && load.undecided === 1 && load.hours.min === 216);
 });
 Deno.test("parser retained-source metadata becomes visible stale provenance", () => {
   const plan = planOf({

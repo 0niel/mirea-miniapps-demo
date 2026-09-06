@@ -35,6 +35,7 @@ export const samplePlan: Plan = {
     },
     {
       id: "sport-a-2",
+      subject_id: "sport-a",
       name: "Атлетическая гимнастика",
       choice_group: "Физическая культура и спорт (элективные дисциплины)",
       semester: 2,
@@ -44,6 +45,7 @@ export const samplePlan: Plan = {
     },
     {
       id: "sport-b-2",
+      subject_id: "sport-b",
       name: "Адаптивная физическая культура",
       choice_group: "Физическая культура и спорт (элективные дисциплины)",
       semester: 2,
@@ -67,6 +69,26 @@ export const samplePlan: Plan = {
       control_forms: [],
       hours: null,
       credits: null,
+    },
+    {
+      id: "sport-a-3",
+      subject_id: "sport-a",
+      name: "Атлетическая гимнастика",
+      choice_group: "Физическая культура и спорт (элективные дисциплины)",
+      semester: 3,
+      control_forms: ["Зачёт"],
+      hours: 72,
+      credits: 0,
+    },
+    {
+      id: "sport-b-3",
+      subject_id: "sport-b",
+      name: "Адаптивная физическая культура",
+      choice_group: "Физическая культура и спорт (элективные дисциплины)",
+      semester: 3,
+      control_forms: ["Зачёт"],
+      hours: 108,
+      credits: 0,
     },
   ],
 };
@@ -101,9 +123,9 @@ export const sampleData: Json = {
     plan_id: samplePlan.id,
     goal: "Собрать портфолио и уверенно пройти первую практику",
   },
-  progress: [
-    { discipline_id: "math-1", completed: true, note: "Повторить интегралы" },
-    { discipline_id: "sport-a-2", chosen: true, completed: false },
+  records: [
+    { discipline_id: "math-1", note: "Повторить интегралы" },
+    { discipline_id: "sport-a-2", chosen: true },
   ],
 };
 export const catalogData: Json = {

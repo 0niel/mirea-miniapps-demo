@@ -123,7 +123,7 @@ function apiAction(
     return { action: "save_goal", params: { goal: literal(body.goal, 500) } };
   }
   if (
-    !["/api/select", "/api/completed", "/api/note", "/api/chosen"].includes(
+    !["/api/select", "/api/note", "/api/chosen"].includes(
       path,
     )
   ) return null;
@@ -133,24 +133,18 @@ function apiAction(
   }
   if (!validId(body.discipline_id)) throw { code: "22023" };
   if (path === "/api/chosen") {
-    if (typeof body.chosen !== "boolean") throw { code: "22023" };
+    if (
+      typeof body.chosen !== "boolean" ||
+      (body.scope !== undefined &&
+        !["semester", "subject"].includes(String(body.scope)))
+    ) throw { code: "22023" };
     return {
       action: "set_chosen",
       params: {
         id: body.id,
         discipline_id: body.discipline_id,
         chosen: body.chosen,
-      },
-    };
-  }
-  if (path === "/api/completed") {
-    if (typeof body.completed !== "boolean") throw { code: "22023" };
-    return {
-      action: "set_completed",
-      params: {
-        id: body.id,
-        discipline_id: body.discipline_id,
-        completed: body.completed,
+        scope: body.scope ?? "semester",
       },
     };
   }

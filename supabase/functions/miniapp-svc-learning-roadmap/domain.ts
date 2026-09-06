@@ -3,6 +3,7 @@ export interface Discipline {
   id: string;
   name: string;
   source_code?: string;
+  subject_id?: string;
   semester: number | null;
   kind?: string;
   choice_group?: string | null;
@@ -146,6 +147,7 @@ export function planOf(value: unknown): Plan | null {
         id: String(d.id),
         name: literal(d.name),
         source_code: literal(d.source_code, 100),
+        subject_id: validId(d.subject_id) ? String(d.subject_id) : undefined,
         semester: sem !== null && Number.isInteger(sem) && sem >= 1 && sem <= 20
           ? sem
           : null,
@@ -190,51 +192,100 @@ export function semesterLabel(value: number | null): string {
     ? "Семестр не определён"
     : `${value} семестр · ${Math.ceil(value / 2)} курс`;
 }
-export function progressOf(
-  plan: Plan,
-  records: unknown,
-): {
-  done: number;
-  total: number;
-  ratio: number;
-  ids: Set<string>;
-  chosen: Set<string>;
-  undecided: number;
-} {
-  const rows = arrayOf(records).map(objectOf);
-  const chosen = new Set(
-    rows.filter((r) => r.chosen === true).map((r) => String(r.discipline_id)),
-  );
-  const required = plan.disciplines.filter((d) =>
-    !d.choice_group && (!d.is_optional || chosen.has(d.id))
-  );
-  const groups = new Set(
-    plan.disciplines.filter((d) => d.choice_group && !d.is_optional).map((d) =>
-      `${d.semester}:${d.choice_group}`
+export function chosenIds(plan: Plan, records: unknown): Set<string> {
+  const available = new Set(
+    plan.disciplines.filter((d) => d.choice_group || d.is_optional).map((d) =>
+      d.id
     ),
   );
-  const picked = new Map<string, Discipline>();
-  for (const d of plan.disciplines) {
-    if (d.choice_group && chosen.has(d.id)) {
-      picked.set(`${d.semester}:${d.choice_group}`, d);
-    }
-  }
-  const eligible = new Set([...required, ...picked.values()].map((d) => d.id));
-  const ids = new Set(
-    rows.filter((r) =>
-      r.completed === true && eligible.has(String(r.discipline_id))
+  return new Set(
+    arrayOf(records).map(objectOf).filter((r) =>
+      r.chosen === true && available.has(String(r.discipline_id))
     ).map((r) => String(r.discipline_id)),
   );
-  const total = required.length + new Set([...groups, ...picked.keys()]).size;
-  const undecided = [...groups].filter((g) => !picked.has(g)).length;
-  return {
-    done: ids.size,
-    total,
-    ratio: total ? ids.size / total : 0,
-    ids,
-    chosen,
-    undecided,
+}
+export interface LoadRange {
+  min: number | null;
+  max: number | null;
+}
+export interface Workload {
+  hours: LoadRange;
+  credits: LoadRange;
+  subjects: number;
+  groups: number;
+  undecided: number;
+  optional: number;
+}
+export function workloadOf(rows: Discipline[], chosen: Set<string>): Workload {
+  const units: Discipline[][] = [];
+  const groups = new Map<string, Discipline[]>();
+  let undecided = 0, optional = 0;
+  for (const d of rows) {
+    if (d.choice_group) {
+      const key = `${d.semester}:${d.choice_group}`;
+      groups.set(key, [...(groups.get(key) ?? []), d]);
+    } else if (!d.is_optional || chosen.has(d.id)) {
+      units.push([d]);
+      if (d.is_optional) optional++;
+    }
+  }
+  let mandatoryGroups = 0;
+  for (const items of groups.values()) {
+    const picked = items.find((d) => chosen.has(d.id));
+    const mandatory = items.some((d) => !d.is_optional);
+    if (mandatory) mandatoryGroups++;
+    if (picked) {
+      units.push([picked]);
+      if (!mandatory) optional++;
+    } else if (mandatory) {
+      units.push(items);
+      undecided++;
+    }
+  }
+  const total = (key: "hours" | "credits"): LoadRange => {
+    if (units.some((items) => items.some((d) => d[key] === null))) {
+      return { min: null, max: null };
+    }
+    return {
+      min: Math.round(
+        units.reduce(
+          (n, items) => n + Math.min(...items.map((d) => d[key] as number)),
+          0,
+        ) * 1000,
+      ) / 1000,
+      max: Math.round(
+        units.reduce(
+          (n, items) => n + Math.max(...items.map((d) => d[key] as number)),
+          0,
+        ) * 1000,
+      ) / 1000,
+    };
   };
+  return {
+    hours: total("hours"),
+    credits: total("credits"),
+    subjects: units.length,
+    groups: mandatoryGroups,
+    undecided,
+    optional,
+  };
+}
+export function rangeLabel(range: LoadRange, unit: string): string {
+  if (range.min === null || range.max === null) return `${unit}: не все данные`;
+  return range.min === range.max
+    ? fmt(range.min, unit)
+    : `${range.min.toLocaleString("ru-RU")}–${
+      range.max.toLocaleString("ru-RU")
+    } ${unit}`;
+}
+export function relatedSubjects(plan: Plan, subject: Discipline): Discipline[] {
+  return plan.disciplines.filter((d) =>
+    d.id === subject.id ||
+    Boolean(
+      subject.subject_id && d.subject_id === subject.subject_id &&
+        d.choice_group === subject.choice_group,
+    )
+  );
 }
 export interface Comparison {
   name: string;
