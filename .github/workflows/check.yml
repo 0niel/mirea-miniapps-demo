@@ -1,0 +1,72 @@
+name: Check
+
+on:
+  push:
+    branches: [main, student-miniapps]
+    paths-ignore:
+      - 'curriculum/data/**'
+      - 'discounts/data/**'
+      - 'data/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: 'v2.9.6'
+      - run: pip install -r curriculum/requirements.txt
+      - run: python -m unittest discover -s curriculum/tests -v
+      - run: python -m unittest discover -s discounts/tests -v
+      - run: python -m unittest discover -s scripts/tests -v
+      - name: Check database permissions and behavior
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/schema_fixture.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075451_create_learning_roadmap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075510_create_student_discounts_miniapp.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075734_create_student_data_sync.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-svc-learning-roadmap/security_test.sql
+          psql -v ON_ERROR_STOP=1 -f discounts/tests/schema.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-sync-student-data/schema_test.sql
+      - run: |
+          for service in miniapp-svc-learning-roadmap miniapp-svc-student-discounts miniapp-sync-student-data; do
+            deno fmt --check "supabase/functions/$service"
+            deno check --config "supabase/functions/$service/deno.json" --frozen "supabase/functions/$service/index.ts"
+            deno lint "supabase/functions/$service"
+            deno test --config "supabase/functions/$service/deno.json" --frozen "supabase/functions/$service"
+          done
+      - run: python scripts/bundle_data.py
+      - run: python curriculum/verify.py
+      - run: git diff --exit-code -- data/manifest.json

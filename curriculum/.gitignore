@@ -1,0 +1,6 @@
+.cache/
+scratch/
+__pycache__/
+*.pyc
+*.sql
+public/

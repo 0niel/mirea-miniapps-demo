@@ -1,0 +1,74 @@
+{
+  "checked_at": "2026-09-06T08:34:03Z",
+  "results": [
+    {
+      "id": "mumu-student",
+      "status": "checked",
+      "source_sha256": "57dbed79864458d6aeee98bb6497c867d911bac05b0c7a2c34227b2b805c9560"
+    },
+    {
+      "id": "github-pro",
+      "status": "checked",
+      "source_sha256": "693692cbfc883b2b28438e30bffc002797acbd614446e0b7f6ecf410b7c828b3"
+    },
+    {
+      "id": "jetbrains-student",
+      "status": "checked",
+      "source_sha256": "693692cbfc883b2b28438e30bffc002797acbd614446e0b7f6ecf410b7c828b3"
+    },
+    {
+      "id": "datacamp-student",
+      "status": "checked",
+      "source_sha256": "693692cbfc883b2b28438e30bffc002797acbd614446e0b7f6ecf410b7c828b3"
+    },
+    {
+      "id": "frontendmasters-student",
+      "status": "checked",
+      "source_sha256": "693692cbfc883b2b28438e30bffc002797acbd614446e0b7f6ecf410b7c828b3"
+    },
+    {
+      "id": "onepassword-student",
+      "status": "checked",
+      "source_sha256": "693692cbfc883b2b28438e30bffc002797acbd614446e0b7f6ecf410b7c828b3"
+    },
+    {
+      "id": "figma-education",
+      "status": "checked",
+      "source_sha256": "0af2ddf83d9f1a37ac197a066eb9b8a2b4d4e6ea8d79fe568a29804cca791e7a"
+    },
+    {
+      "id": "unity-student",
+      "status": "checked",
+      "source_sha256": "6c81317ad87e59322c2cf2a21dd3c8a6d2ace6dee91dc259e0480870b848360a"
+    },
+    {
+      "id": "autodesk-education",
+      "status": "unavailable",
+      "reason": "HTTPError",
+      "attempted_source_url": "https://www.autodesk.com/education/home"
+    },
+    {
+      "id": "moscow-student-transport",
+      "status": "unavailable",
+      "reason": "URLError",
+      "attempted_source_url": "https://mosgortrans.ru/passenger/fares/student/"
+    },
+    {
+      "id": "tretyakov-student-sunday",
+      "status": "unavailable",
+      "reason": "URLError",
+      "attempted_source_url": "https://tretyakov.ru/for-visitors/free/"
+    },
+    {
+      "id": "garage-student",
+      "status": "checked",
+      "source_sha256": "bc269316ad60b3e1051cd8bff4018859b5c05b1a3b328c9334efe27d7c5b2245"
+    },
+    {
+      "id": "spb-student-trains",
+      "status": "unavailable",
+      "reason": "TimeoutError",
+      "attempted_source_url": "https://ticket.ppk-piter.ru/passenger/benefits/regional/spb/"
+    }
+  ]
+}

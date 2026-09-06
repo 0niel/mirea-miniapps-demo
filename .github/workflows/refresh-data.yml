@@ -1,0 +1,69 @@
+name: Refresh student data
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-student-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: curriculum/.cache
+          key: curriculum-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: curriculum-v1-${{ runner.os }}-
+      - run: pip install -r curriculum/requirements.txt
+      - run: python -m unittest discover -s curriculum/tests -v
+      - run: python -m unittest discover -s discounts/tests -v
+      - name: Parse current curricula
+        run: python curriculum/sync.py --workers 4 --parse-workers 2
+      - name: Validate parsed curricula
+        run: python curriculum/verify.py
+      - name: Verify student offers
+        run: python discounts/refresh.py
+      - name: Assemble checked dataset
+        run: python scripts/bundle_data.py
+      - name: Publish data
+        id: publish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add curriculum/data discounts/data data
+          if ! git diff --cached --quiet; then
+            git commit -m 'Refresh student data'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+          echo "revision=$(git log -1 --format=%H -- data/manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Import and verify published revision
+        run: python scripts/sync_data.py --revision '${{ steps.publish.outputs.revision }}'
+      - name: Keep source report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: student-data-report
+          path: |
+            curriculum/public/status.json
+            curriculum/data/manifest.json
+            discounts/data/check-report.json
+            data/manifest.json
+          retention-days: 30
+          if-no-files-found: ignore
