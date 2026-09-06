@@ -34,7 +34,7 @@ Deno.test("catalog exposes filters results empty state and native busy handling"
       "appForEach",
       "appIf",
       "appErrorState",
-      "appInputField",
+      "appSearchField",
       "appSelectField",
       "wrap",
     ]
@@ -46,6 +46,58 @@ Deno.test("catalog exposes filters results empty state and native busy handling"
     ),
   );
   assert(all.some((n) => n.actionType === "openPage" && n.path === "/suggest"));
+});
+Deno.test("catalog puts native search first and makes the whole offer card actionable", () => {
+  const screen = buildScreen("/", { offers: [offer] });
+  const all = nodes(screen);
+  assert(!JSON.stringify(screen).includes("Чуть выгоднее"));
+  assert(!all.some((n) => n.type === "appProgressBar"));
+  assert(
+    all.some((n) =>
+      n.type === "appCard" &&
+      String((n.onTap as Json)?.path).includes("/offer?id=")
+    ),
+  );
+  assert(
+    all.some((n) =>
+      n.type === "singleChildScrollView" && n.scrollDirection === "horizontal"
+    ),
+  );
+});
+Deno.test("verified curated logos render with bounded fit and unknown offers keep a fallback", () => {
+  const curated = nodes(
+    buildScreen("/offer", { offers: [{ ...offer, id: "github-pro" }] }, {
+      id: "github-pro",
+    }),
+  );
+  const logo = curated.find((n) => n.type === "appImage");
+  assert(
+    logo?.fit === "contain" && logo.enablePreview === false &&
+      Number(logo.width) <= 64,
+  );
+  assert(String(logo?.src).includes("/discounts/media/github-pro-"));
+  const unknown = nodes(
+    buildScreen("/offer", { offers: [offer] }, { id: offer.id }),
+  );
+  assert(!unknown.some((n) => n.type === "appImage"));
+  assert(unknown.some((n) => n.type === "appIconTile" && n.emoji));
+});
+Deno.test("suggestion steps validate before advancing and keep optional fields separate", () => {
+  const all = nodes(buildScreen("/suggest", {}));
+  const next = all.filter((n) => n.type === "appButton" && n.label === "Далее");
+  assert(next.length === 2);
+  assert(
+    next.every((n) => (n.onPressed as Json).actionType === "validateForm"),
+  );
+  assert(
+    all.some((n) => n.type === "appIf" && n.condition === "state.extraOpen"),
+  );
+  assert(all.some((n) => n.id === "source_url" && n.required === true));
+  assert(
+    all.some((n) =>
+      n.label === "Назад" && (n.onPressed as Json).actionType === "setState"
+    ),
+  );
 });
 Deno.test("offer displays evidence and native save share redemption actions", () => {
   const all = nodes(

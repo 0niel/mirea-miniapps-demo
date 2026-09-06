@@ -53,11 +53,12 @@ Deno.test("API payload cannot impersonate another user or smuggle unrecognized a
       req({
         kind: "api",
         method: "POST",
-        path: "/api/completed",
+        path: "/api/chosen",
         body: {
           id: "plan",
           discipline_id: "subject",
-          completed: true,
+          chosen: true,
+          scope: "subject",
           userId: "victim",
           p_user_id: "victim",
           action: "import",
@@ -65,7 +66,8 @@ Deno.test("API payload cannot impersonate another user or smuggle unrecognized a
       }),
     )).status === 200,
   );
-  assert(called.userId === USER && called.action === "set_completed");
+  assert(called.userId === USER && called.action === "set_chosen");
+  assert((called.params as Json).scope === "subject");
   assert(!("userId" in (called.params as Json)));
   assert(
     (await handler(req({ kind: "api", method: "GET", path: "/api/note" })))
@@ -115,8 +117,8 @@ Deno.test("mutations validate booleans and text sizes and sanitize saved express
       req({
         kind: "api",
         method: "POST",
-        path: "/api/completed",
-        body: { id: "plan", discipline_id: "subject", completed: "false" },
+        path: "/api/chosen",
+        body: { id: "plan", discipline_id: "subject", chosen: "false" },
       }),
     )).status === 400,
   );
@@ -141,6 +143,42 @@ Deno.test("mutations validate booleans and text sizes and sanitize saved express
     )).status === 200,
   );
   assert(!String(saved.note).includes("{{"));
+});
+Deno.test("removed completion endpoint and invalid choice scopes never reach dispatch", async () => {
+  let count = 0;
+  const handler = createHandler({
+    serviceKey: KEY,
+    dispatch: () => {
+      count++;
+      return Promise.resolve({});
+    },
+  });
+  assert(
+    (await handler(
+      req({
+        kind: "api",
+        method: "POST",
+        path: "/api/completed",
+        body: { id: "plan", discipline_id: "subject", completed: true },
+      }),
+    )).status === 404,
+  );
+  assert(
+    (await handler(
+      req({
+        kind: "api",
+        method: "POST",
+        path: "/api/chosen",
+        body: {
+          id: "plan",
+          discipline_id: "subject",
+          chosen: true,
+          scope: "plan",
+        },
+      }),
+    )).status === 400,
+  );
+  assert(count === 0);
 });
 Deno.test("screen database failures render a recoverable screen without private details", async () => {
   const handler = createHandler({

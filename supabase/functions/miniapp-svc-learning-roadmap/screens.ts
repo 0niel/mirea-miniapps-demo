@@ -1,5 +1,6 @@
 import {
   arrayOf,
+  chosenIds,
   comparePlans,
   type Discipline,
   fmt,
@@ -11,12 +12,14 @@ import {
   pageOf,
   type Plan,
   planOf,
-  progressOf,
+  rangeLabel,
+  relatedSubjects,
   route,
   semesterLabel,
   stringOf,
   SUBJECT_PAGE_SIZE,
   validId,
+  workloadOf,
 } from "./domain.ts";
 
 type Node = Json;
@@ -135,14 +138,19 @@ function shell(
         type: "singleChildScrollView",
         padding: { left: 16, right: 16, top: 4, bottom: 32 },
         child: column([
-          { type: "appSectionTitle", title, subtitle, topMargin: 0 },
+          {
+            type: "appSectionTitle",
+            title,
+            ...(subtitle ? { subtitle } : {}),
+            topMargin: 0,
+          },
           ...children,
         ]),
       },
     },
   };
 }
-function metadata(plan: Plan): Node[] {
+function metadata(plan: Plan, compact = false): Node[] {
   const level = /бакалавр/i.test(plan.level)
     ? "Бакалавриат"
     : /магистр/i.test(plan.level)
@@ -161,9 +169,10 @@ function metadata(plan: Plan): Node[] {
       ...(plan.admission_year
         ? [tag(`Набор ${plan.admission_year}`, "mute")]
         : []),
-      ...(level ? [tag(level, "mute")] : []),
+      ...(!compact && level ? [tag(level, "mute")] : []),
+      ...(compact && plan.study_form ? [tag(plan.study_form, "mute")] : []),
     ]),
-    ...(plan.study_form || plan.institute
+    ...(!compact && (plan.study_form || plan.institute)
       ? [
         gap(8),
         text(
@@ -232,119 +241,52 @@ function dateLabel(value: unknown): string {
     ? "дата не указана"
     : date.toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow" });
 }
-function progressCard(plan: Plan, records: unknown): Node {
-  const p = progressOf(plan, records);
-  if (!plan.disciplines.length) {
-    return card([
-      text("Прогресс появится после разбора", "headlineStrong"),
+function home(data: Json): Node {
+  const plan = planOf(data.plan);
+  if (plan) return planScreen(plan, data, true);
+  return shell("Траектория", "Учебные планы РТУ МИРЭА", [
+    card([
+      text("Найди свою программу", "heading"),
       gap(8),
       text(
-        "Пока можно изучить официальный PDF и сохранить план.",
-        "subtext",
+        "Предметы по семестрам, варианты выбора и сравнение программ.",
+        "body",
         "muted",
       ),
-    ]);
-  }
-  return card([
-    text(`${p.done} из ${p.total}`, "displaySmall"),
-    text("Отмечено в твоей траектории", "subtext", "muted"),
-    gap(),
-    { type: "appProgressBar", value: p.ratio, color: "accent", height: 8 },
-    gap(8),
-    text(
-      "Личные отметки, не официальная успеваемость. В блоке по выбору учитываем один предмет; факультативы — только выбранные.",
-      "caption",
-      "muted",
-    ),
-    ...(p.undecided
-      ? [
-        gap(8),
-        text(
-          `Осталось выбрать предметы в ${p.undecided} блоках. Открой дисциплины по семестрам.`,
-          "caption",
-          "muted",
-        ),
-      ]
-      : []),
-  ], true);
+      gap(),
+      button("Выбрать учебный план", page("/catalog", "Учебные планы")),
+    ], true),
+    heading("Для учёбы"),
+    wrap([{
+      type: "appChip",
+      label: "Расписание",
+      onTap: { actionType: "openDeepLink", location: "/schedule" },
+    }, {
+      type: "appChip",
+      label: "Банк знаний",
+      onTap: {
+        actionType: "openDeepLink",
+        location: "/services/knowledge-bank",
+      },
+    }]),
+  ]);
 }
-function home(data: Json): Node {
-  const plan = planOf(data.plan), prefs = objectOf(data.preferences);
-  return shell(
-    "Траектория",
-    "Учебные планы РТУ МИРЭА",
-    [
-      card([
-        text("Учёба по плану", "heading"),
-        gap(8),
-        text(
-          "Предметы, твой выбор и прогресс по семестрам.",
-          "body",
-          "muted",
-        ),
-      ], true),
-      gap(),
-      ...(plan
-        ? [
-          heading("Мой учебный план"),
-          card([
-            text(plan.title, "headlineStrong"),
-            gap(),
-            ...metadata(plan),
-            gap(),
-            button(
-              "Открыть мой маршрут",
-              page(route("/plan", { id: plan.id }), "Мой маршрут"),
-            ),
-          ]),
-          gap(),
-          progressCard(plan, data.progress),
-        ]
-        : [
-          gap(),
-          empty(
-            "Выбери свою программу",
-            "Найди направление, профиль и год поступления. Выбор сохранится на всех твоих устройствах.",
-          ),
-        ]),
-      gap(),
-      button(
-        plan ? "Найти или сменить план" : "Найти свой учебный план",
-        page("/catalog", "Учебные планы"),
-        plan ? "secondary" : "primary",
-      ),
-      ...(plan
-        ? [
-          heading("Личная цель", "Видна только тебе"),
-          input("Чему хочу научиться", "goal", 500, true),
-          gap(),
-          button(
-            "Сохранить цель",
-            request("goal", { goal: "{{state.goal}}" }),
-            "secondary",
-          ),
-        ]
-        : []),
-      heading("Рядом с учёбой"),
-      card([
-        button("Моё расписание", {
-          actionType: "openDeepLink",
-          location: "/schedule",
-        }, "secondary"),
-        gap(8),
-        button("Банк знаний", {
-          actionType: "openDeepLink",
-          location: "/services/knowledge-bank",
-        }, "secondary"),
-        gap(8),
-        button("Дедлайны", {
-          actionType: "openDeepLink",
-          location: "/services/deadlines",
-        }, "secondary"),
-      ]),
-    ],
-    { goal: literal(prefs.goal, 500) },
-  );
+function loadText(rows: Discipline[], chosen: Set<string>): string {
+  const load = workloadOf(rows, chosen);
+  return rangeLabel(load.hours, "ч") + " · " + rangeLabel(load.credits, "з.е.");
+}
+function navChip(label: string, action: Node): Node {
+  return { type: "appChip", label, onTap: action };
+}
+function compactButton(
+  label: string,
+  action: Node,
+  variant = "secondary",
+): Node {
+  return { ...button(label, action, variant), expanded: false, size: "small" };
+}
+function toggle(key: string): Node {
+  return { actionType: "setState", key, value: "{{!state." + key + "}}" };
 }
 function select(label: string, key: string, values: unknown): Node {
   const placeholder = ({
@@ -392,10 +334,8 @@ function catalog(data: Json, params: Json): Node {
     institute: "{{state.institute}}",
   }, openCatalog);
   return shell(
-    compare ? "Выбери второй план" : "Найди свой маршрут",
-    compare
-      ? "Сопоставим дисциплины, семестры и учебную нагрузку"
-      : "Направление, профиль, форма и год поступления",
+    compare ? "Второй план" : "Учебные планы",
+    "",
     [
       card([
         input("Поиск по названию или коду", "q", 100),
@@ -425,22 +365,33 @@ function catalog(data: Json, params: Json): Node {
           condition: "state.filtersOpen",
           child: column([
             gap(),
-            select("Направление", "code", filters.codes),
-            gap(8),
             select("Год поступления", "year", filters.years),
             gap(8),
             select("Уровень", "level", filters.levels),
             gap(8),
-            select("Форма обучения", "form", filters.forms),
-            gap(8),
-            select("Институт", "institute", filters.institutes),
+            navChip(
+              "Направление, институт и форма",
+              toggle("programFiltersOpen"),
+            ),
+            {
+              type: "appIf",
+              condition: "state.programFiltersOpen",
+              child: column([
+                gap(8),
+                select("Направление", "code", filters.codes),
+                gap(8),
+                select("Институт", "institute", filters.institutes),
+                gap(8),
+                select("Форма обучения", "form", filters.forms),
+              ]),
+            },
             gap(),
             button("Применить фильтры", findPlans),
           ]),
         },
       ]),
       heading(
-        `${total} планов`,
+        `Планы · ${total}`,
         total
           ? `Страница ${currentPage + 1} из ${Math.ceil(total / PAGE_SIZE)}`
           : "Попробуй другой запрос или сбрось фильтры",
@@ -451,7 +402,7 @@ function catalog(data: Json, params: Json): Node {
         card([
           text(plan.title, "headlineStrong"),
           gap(),
-          ...metadata(plan),
+          ...metadata(plan, true),
           gap(8),
           tag(
             plan.quality === "complete"
@@ -509,6 +460,9 @@ function catalog(data: Json, params: Json): Node {
     ],
     {
       filtersOpen: false,
+      programFiltersOpen: Boolean(
+        applied.code || applied.institute || applied.form,
+      ),
       ...Object.fromEntries(
         ["q", "code", "year", "level", "form", "institute"].map((
           k,
@@ -517,145 +471,242 @@ function catalog(data: Json, params: Json): Node {
     },
   );
 }
-function planScreen(plan: Plan, data: Json): Node {
-  const progress = progressOf(plan, data.progress),
-    selected = objectOf(data.preferences).plan_id === plan.id;
+function planScreen(plan: Plan, data: Json, isHome = false): Node {
+  const chosen = chosenIds(plan, data.records),
+    prefs = objectOf(data.preferences);
   const semesters = [...new Set(plan.disciplines.map((d) => d.semester))].sort((
     a,
     b,
   ) => (a ?? 99) - (b ?? 99));
-  return shell("Учебный план", "Полная картина твоего обучения", [
-    card([
-      text(plan.title, "pageTitle"),
-      gap(),
-      ...metadata(plan),
-      gap(),
-      button(
-        selected ? "Это мой учебный план" : "Выбрать этот план",
-        request("select", { id: plan.id }),
-      ),
-      gap(8),
-      button(
-        "Сравнить с другим планом",
-        page(route("/catalog", { compare: plan.id }), "Сравнить планы"),
-        "secondary",
-      ),
-      gap(8),
-      button("Поделиться программой", {
-        actionType: "share",
-        text:
-          `${plan.title}\nhttps://mirea.ninja/app/services/apps/learning-roadmap/run?page=${
-            encodeURIComponent(route("/plan", { id: plan.id }))
-          }`,
-      }, "secondary"),
-    ], true),
-    gap(),
-    progressCard(plan, data.progress),
-    heading(
-      "Маршрут по семестрам",
-      "Открой семестр, чтобы увидеть дисциплины и формы контроля",
+  const selected = prefs.plan_id === plan.id;
+  const status = [
+    selected ? "Мой учебный план" : "",
+    plan.stale === true
+      ? "Сохранена предыдущая версия"
+      : plan.quality !== "complete"
+      ? "Есть неполные данные"
+      : "",
+  ].filter(Boolean).join(" · ");
+  return shell(plan.title, "", [
+    ...(status ? [text(status, "caption", "muted"), gap(8)] : []),
+    ...(plan.profile && plan.profile !== plan.title
+      ? [text(plan.profile, "subtext"), gap(6)]
+      : []),
+    text(
+      [
+        plan.program_code,
+        plan.admission_year ? "Набор " + plan.admission_year : "",
+        plan.study_form,
+      ].filter(Boolean).join(" · "),
+      "caption",
+      "muted",
     ),
+    gap(8),
+    wrap([
+      ...(!selected
+        ? [
+          compactButton(
+            "Сохранить план",
+            request("select", { id: plan.id }),
+            "primary",
+          ),
+        ]
+        : []),
+      ...(plan.source_url
+        ? [
+          compactButton("PDF плана", {
+            actionType: "openUrl",
+            url: plan.source_url,
+          }),
+        ]
+        : []),
+      compactButton(
+        "Сравнить",
+        page(route("/catalog", { compare: plan.id }), "Сравнение"),
+      ),
+    ]),
+    gap(4),
+    wrap([
+      compactButton(
+        "Сменить учебный план",
+        page("/catalog", "Учебные планы"),
+        "text",
+      ),
+      compactButton("О данных плана", toggle("planDataOpen"), "text"),
+    ]),
+    {
+      type: "appIf",
+      condition: "state.planDataOpen",
+      child: column([gap(8), sourceCard(plan)]),
+    },
+    heading("Семестры"),
     ...semesters.flatMap((sem) => {
-      const subjects = plan.disciplines.filter((d) => d.semester === sem),
-        done = subjects.filter((d) => progress.ids.has(d.id)).length;
-      return [
-        card([
+      const rows = plan.disciplines.filter((d) => d.semester === sem),
+        load = workloadOf(rows, chosen);
+      return [{
+        ...card([
           text(semesterLabel(sem), "headlineStrong"),
-          gap(8),
+          gap(6),
+          text(loadText(rows, chosen), "bodyStrong"),
+          gap(4),
           text(
-            `${subjects.length} дисциплин · отмечено ${done}`,
-            "subtext",
+            "Позиций в плане: " + load.subjects +
+              (load.groups ? " · блоков выбора: " + load.groups : "") +
+              (load.optional ? " · факультативов: " + load.optional : ""),
+            "caption",
             "muted",
           ),
-          gap(8),
-          {
-            type: "appProgressBar",
-            value: subjects.length ? done / subjects.length : 0,
-            height: 6,
-          },
-          gap(),
-          button(
-            "Открыть дисциплины",
-            page(
-              route("/semester", { id: plan.id, semester: sem ?? "unknown" }),
-              semesterLabel(sem),
-            ),
-            "secondary",
-          ),
+          ...(load.undecided
+            ? [
+              gap(4),
+              text(
+                "Блоков для выбора: " + load.undecided,
+                "caption",
+                "muted",
+              ),
+            ]
+            : []),
         ]),
-        gap(),
-      ];
+        onTap: page(
+          route("/semester", { id: plan.id, semester: sem ?? "unknown" }),
+          semesterLabel(sem),
+        ),
+      }, gap(8)];
     }),
     ...(!semesters.length
       ? [
         empty(
-          "Разбор пока недоступен",
-          "Учебный план есть в каталоге. Открой официальный документ ниже.",
+          "Дисциплины пока недоступны",
+          "Открой официальный PDF или подробности в разделе «О данных плана».",
+        ),
+      ]
+      : [
+        text(
+          "В нагрузке каждый блок выбора учитывается один раз. Факультативы добавляются после выбора. Диапазон означает, что объём зависит от альтернативы.",
+          "caption",
+          "muted",
+        ),
+      ]),
+    ...(isHome
+      ? [
+        heading("Личная цель"),
+        input("Чему хочу научиться", "goal", 500, true),
+        gap(8),
+        button(
+          "Сохранить цель",
+          request("goal", { goal: "{{state.goal}}" }),
+          "secondary",
         ),
       ]
       : []),
-    sourceCard(plan),
-  ]);
-}
-function subjectCard(plan: Plan, d: Discipline, completed: boolean): Node {
-  return card([
+    heading("Для учёбы"),
     wrap([
-      tag(completed ? "Отмечено" : "Впереди", completed ? "success" : "mute"),
-      ...(d.choice_group ? [tag("По выбору", "mute")] : []),
-      ...(d.is_optional ? [tag("Факультатив", "mute")] : []),
-      ...d.control_forms.slice(0, 3).map((x) => tag(x)),
+      navChip("Расписание", {
+        actionType: "openDeepLink",
+        location: "/schedule",
+      }),
+      navChip("Материалы", {
+        actionType: "openDeepLink",
+        location: "/services/knowledge-bank",
+      }),
+      navChip("Дедлайны", {
+        actionType: "openDeepLink",
+        location: "/services/deadlines",
+      }),
     ]),
-    gap(8),
-    text(d.name, "headlineStrong"),
-    gap(8),
+    heading("О программе"),
     text(
-      `${fmt(d.hours, "ч")} · ${fmt(d.credits, "з.е.")}`,
+      [plan.level, plan.institute].filter(Boolean).join(" · "),
       "subtext",
       "muted",
     ),
-    gap(),
-    button(
-      "Открыть предмет",
-      page(
-        route("/discipline", { id: plan.id, discipline: d.id }),
-        "Дисциплина",
+    gap(8),
+    button("Поделиться программой", {
+      actionType: "share",
+      text: plan.title +
+        "\nhttps://mirea.ninja/app/services/apps/learning-roadmap/run?page=" +
+        encodeURIComponent(route("/plan", { id: plan.id })),
+    }, "secondary"),
+  ], { planDataOpen: false, goal: literal(prefs.goal, 500) });
+}
+function subjectCard(plan: Plan, d: Discipline, chosen: Set<string>): Node {
+  const optional = Boolean(d.choice_group) || d.is_optional === true;
+  return {
+    ...card([
+      text(d.name, "headlineStrong"),
+      gap(6),
+      text(
+        fmt(d.hours, "ч") + " · " + fmt(d.credits, "з.е."),
+        "subtext",
+        "muted",
       ),
-      "secondary",
+      ...(d.control_forms.length || optional
+        ? [
+          gap(8),
+          wrap([
+            ...(d.is_optional
+              ? [tag("Факультатив", "mute")]
+              : d.choice_group
+              ? [tag("По выбору", "mute")]
+              : []),
+            ...(chosen.has(d.id) ? [tag("Мой выбор", "success")] : []),
+            ...d.control_forms.slice(0, 2).map((x) => tag(x)),
+          ]),
+        ]
+        : []),
+    ]),
+    onTap: page(
+      route("/discipline", { id: plan.id, discipline: d.id }),
+      d.name,
     ),
-  ]);
+  };
 }
 function semesterScreen(plan: Plan, data: Json, params: Json): Node {
   const sem = params.semester === "unknown" ? null : Number(params.semester),
-    done = progressOf(plan, data.progress).ids;
+    chosen = chosenIds(plan, data.records);
   const filter =
-    ["all", "pending", "done", "exam"].includes(String(params.filter))
+    ["all", "choice", "optional", "exam"].includes(String(params.filter))
       ? String(params.filter)
       : "all";
-  const all = plan.disciplines.filter((d) => d.semester === sem);
+  const all = plan.disciplines.filter((d) => d.semester === sem),
+    load = workloadOf(all, chosen);
   const subjects = all.filter((d) =>
-    filter === "done"
-      ? done.has(d.id)
-      : filter === "pending"
-      ? !done.has(d.id)
+    filter === "choice"
+      ? Boolean(d.choice_group) && !d.is_optional
+      : filter === "optional"
+      ? d.is_optional
       : filter === "exam"
-      ? d.control_forms.some((x) => /экзамен/i.test(x))
+      ? d.control_forms.includes("Экзамен")
       : true
   );
   const current = pageOf(params.page),
-    pages = subjects.slice(
-      current * SUBJECT_PAGE_SIZE,
-      (current + 1) * SUBJECT_PAGE_SIZE,
-    );
-  const base = { id: plan.id, semester: sem ?? "unknown", filter };
+    base = { id: plan.id, semester: sem ?? "unknown", filter };
   return shell(
     semesterLabel(sem),
-    `${plan.program_code} · ${plan.admission_year ?? "Год не указан"}`,
+    plan.program_code + " · набор " + (plan.admission_year ?? "не указан"),
     [
+      ...(all.length
+        ? [
+          text(loadText(all, chosen), "heading"),
+          gap(4),
+          text(
+            load.undecided
+              ? "Нагрузка включает по одному предмету из блоков выбора. Нужно выбрать: " +
+                load.undecided + "."
+              : "Нагрузка учитывает твой выбор дисциплин.",
+            "caption",
+            "muted",
+          ),
+          gap(10),
+        ]
+        : []),
       wrap(
-        [["all", "Все"], ["pending", "Впереди"], ["done", "Отмечено"], [
-          "exam",
-          "Экзамены",
-        ]].map(([value, label]) => ({
+        [
+          ["all", "Все"],
+          ["choice", "По выбору"],
+          ["optional", "Факультативы"],
+          ["exam", "Экзамены"],
+        ].map(([value, label]) => ({
           type: "appChip",
           label,
           selected: filter === value,
@@ -665,19 +716,27 @@ function semesterScreen(plan: Plan, data: Json, params: Json): Node {
           ),
         })),
       ),
-      heading(
-        `${subjects.length} дисциплин`,
-        sem === null
-          ? "Объём по предмету из источника; распределение по семестрам не определено"
-          : "Нагрузка указана для этого семестра, если она есть в источнике",
-      ),
-      ...pages.flatMap((d) => [subjectCard(plan, d, done.has(d.id)), gap()]),
+      ...(sem === null
+        ? [
+          gap(8),
+          text(
+            "Распределение по семестрам не определено. Объём указан для предмета целиком.",
+            "caption",
+            "muted",
+          ),
+        ]
+        : []),
+      heading("Дисциплины · " + subjects.length),
+      ...subjects.slice(
+        current * SUBJECT_PAGE_SIZE,
+        (current + 1) * SUBJECT_PAGE_SIZE,
+      ).flatMap((d) => [subjectCard(plan, d, chosen), gap(8)]),
       ...(!subjects.length
         ? [empty(
-          "Здесь пока пусто",
+          "По этому фильтру ничего нет",
           all.length
-            ? "Под выбранный фильтр дисциплины не попали."
-            : "В разборе нет строк для этого семестра. Это не подтверждает отсутствие занятий.",
+            ? "Выбери другой фильтр или открой все дисциплины."
+            : "В разборе нет строк этого семестра; проверь официальный документ.",
         )]
         : []),
       ...(current > 0
@@ -697,16 +756,15 @@ function semesterScreen(plan: Plan, data: Json, params: Json): Node {
             page(route("/semester", { ...base, page: current + 1 })),
             "secondary",
           ),
-          gap(),
+          gap(8),
         ]
         : []),
-      button(
-        "К учебному плану",
-        page(route("/plan", { id: plan.id })),
-        "secondary",
-      ),
-      gap(),
-      sourceCard(plan),
+      wrap([
+        navChip("Все семестры", page(route("/plan", { id: plan.id }))),
+        ...(plan.source_url
+          ? [navChip("PDF", { actionType: "openUrl", url: plan.source_url })]
+          : []),
+      ]),
     ],
   );
 }
@@ -718,107 +776,163 @@ function disciplineScreen(plan: Plan, data: Json, params: Json): Node {
       "Учебный план мог обновиться. Вернись к программе.",
     );
   }
-  const record =
-    arrayOf(data.progress).map(objectOf).find((x) =>
-      x.discipline_id === d.id
-    ) ?? {};
-  const completed = record.completed === true;
-  const optional = Boolean(d.choice_group) || d.is_optional === true;
-  const chosen = record.chosen === true;
-  return shell("Дисциплина", semesterLabel(d.semester), [
-    card([
-      text(d.name, "pageTitle"),
-      gap(),
-      wrap(
-        d.control_forms.length
-          ? d.control_forms.map((x) => tag(x))
-          : [tag("Контроль не указан", "mute")],
-      ),
-      gap(),
-      text(fmt(d.hours, "ч"), "headlineStrong"),
-      gap(4),
-      text(fmt(d.credits, "з.е."), "headlineStrong"),
-      ...(d.source_code
-        ? [gap(8), text(`Код в плане: ${d.source_code}`, "caption", "muted")]
-        : []),
-      ...(d.kind
-        ? [
-          gap(4),
-          text(
-            ({
-              discipline: "Дисциплина",
-              practice: "Практика",
-              elective: "Факультатив",
-              attestation: "Аттестация",
-              final_assessment: "Итоговая аттестация",
-            } as Record<string, string>)[d.kind] ?? "Учебная дисциплина",
-            "caption",
-            "muted",
-          ),
-        ]
-        : []),
-      ...(d.semester === null
-        ? [
-          gap(8),
-          text(
-            "Объём относится к предмету в исходном документе. Распределение по семестрам не определено.",
-            "caption",
-            "muted",
-          ),
-        ]
-        : []),
-    ], true),
+  const chosen = chosenIds(plan, data.records),
+    record =
+      arrayOf(data.records).map(objectOf).find((x) =>
+        x.discipline_id === d.id
+      ) ?? {};
+  const optional = Boolean(d.choice_group) || d.is_optional === true,
+    selected = chosen.has(d.id),
+    related = relatedSubjects(plan, d);
+  const alternatives = d.choice_group
+    ? plan.disciplines.filter((x) =>
+      x.choice_group === d.choice_group && x.semester === d.semester &&
+      x.id !== d.id
+    )
+    : [];
+  const selectedOther = alternatives.find((x) => chosen.has(x.id));
+  return shell(d.name, semesterLabel(d.semester), [
+    text(fmt(d.hours, "ч") + " · " + fmt(d.credits, "з.е."), "heading"),
+    gap(8),
+    wrap([
+      ...(d.control_forms.length
+        ? d.control_forms.map((x) => tag(x))
+        : [tag("Контроль не указан", "mute")]),
+      ...(selected ? [tag("Мой выбор", "success")] : []),
+    ]),
+    ...(d.semester === null
+      ? [
+        gap(8),
+        text(
+          "Нагрузка указана для предмета целиком; семестр не определён.",
+          "caption",
+          "muted",
+        ),
+      ]
+      : []),
     ...(optional
       ? [
         gap(),
         card([
           text(
-            d.is_optional ? "Факультатив" : "Дисциплина по выбору",
+            d.is_optional ? "Факультатив" : "Один предмет из блока",
             "headlineStrong",
           ),
-          gap(8),
+          gap(6),
           text(
-            d.choice_group
-              ? "Выбери одну альтернативу в этом блоке и семестре. Это твой личный маршрут; официальную запись уточняй в институте."
-              : "Этот предмет попадёт в твой прогресс, если ты добавишь его в маршрут.",
+            d.is_optional
+              ? "Не входит в обязательную нагрузку. Добавь, если планируешь изучать этот предмет."
+              : "Альтернативы не суммируются: в этом блоке и семестре учитываем один предмет. Личный выбор не заменяет официальную запись.",
             "subtext",
             "muted",
           ),
+          ...(selectedOther
+            ? [gap(8), text("Сейчас выбран: " + selectedOther.name, "subtext")]
+            : []),
           gap(),
           button(
-            chosen ? "Убрать из моего выбора" : "Добавить в мой маршрут",
+            selected
+              ? (d.is_optional ? "Убрать факультатив" : "Отменить выбор")
+              : selectedOther
+              ? "Выбрать вместо текущего"
+              : d.is_optional
+              ? "Добавить факультатив"
+              : "Выбрать предмет",
             request("chosen", {
               id: plan.id,
               discipline_id: d.id,
-              chosen: !chosen,
+              chosen: !selected,
+              scope: "semester",
             }),
-            chosen ? "secondary" : "primary",
+            selected ? "secondary" : "primary",
           ),
-        ]),
+          ...(related.length > 1
+            ? [
+              gap(8),
+              text(
+                "Этот предмет есть в семестрах: " + related.map((x) =>
+                  x.semester ?? "?"
+                ).join(", ") + ".",
+                "caption",
+                "muted",
+              ),
+              gap(8),
+              button(
+                related.every((x) => chosen.has(x.id))
+                  ? "Отменить во всех семестрах"
+                  : "Выбрать во всех семестрах",
+                request("chosen", {
+                  id: plan.id,
+                  discipline_id: d.id,
+                  chosen: !related.every((x) => chosen.has(x.id)),
+                  scope: "subject",
+                }),
+                "secondary",
+              ),
+            ]
+            : []),
+        ], true),
       ]
       : []),
-    ...(!optional || chosen
+    ...(alternatives.length
       ? [
-        gap(),
-        button(
-          completed
-            ? "Убрать отметку о прохождении"
-            : "Отметить как пройденное",
-          request("completed", {
-            id: plan.id,
-            discipline_id: d.id,
-            completed: !completed,
-          }),
-          completed ? "secondary" : "primary",
-        ),
+        heading("Другие варианты этого блока"),
+        ...alternatives.slice(0, 12).flatMap((
+          x,
+        ) => [{
+          ...card([
+            text(x.name, "bodyStrong"),
+            gap(4),
+            text(
+              fmt(x.hours, "ч") + " · " + fmt(x.credits, "з.е."),
+              "caption",
+              "muted",
+            ),
+            ...(chosen.has(x.id) ? [gap(4), tag("Мой выбор", "success")] : []),
+          ]),
+          onTap: page(
+            route("/discipline", { id: plan.id, discipline: x.id }),
+            x.name,
+          ),
+        }, gap(6)]),
+        ...(alternatives.length > 12
+          ? [
+            button(
+              "Все варианты семестра",
+              page(
+                route("/semester", {
+                  id: plan.id,
+                  semester: d.semester ?? "unknown",
+                  filter: d.is_optional ? "optional" : "choice",
+                }),
+              ),
+              "secondary",
+            ),
+          ]
+          : []),
       ]
       : []),
-    heading(
-      "Мои заметки",
-      "Ссылки, темы для повторения и личные планы. Видны только тебе.",
-    ),
-    input("Заметка к предмету", "note", 2000, true),
-    gap(),
+    heading("Материалы и занятия"),
+    wrap([
+      navChip("Банк знаний", {
+        actionType: "openDeepLink",
+        location: "/services/knowledge-bank",
+      }),
+      navChip("Расписание", {
+        actionType: "openDeepLink",
+        location: "/schedule",
+      }),
+      navChip(
+        "Запланировать",
+        page(
+          route("/reminder", { id: plan.id, discipline: d.id }),
+          "Запланировать занятие",
+        ),
+      ),
+    ]),
+    heading("Моя заметка"),
+    input("Темы, ссылки и личные планы", "note", 2000, true),
+    gap(8),
     button(
       "Сохранить заметку",
       request("note", {
@@ -828,29 +942,41 @@ function disciplineScreen(plan: Plan, data: Json, params: Json): Node {
       }),
       "secondary",
     ),
-    heading("Запланировать занятие"),
-    button(
-      "Напоминание или календарь",
-      page(
-        route("/reminder", { id: plan.id, discipline: d.id }),
-        "Запланировать",
+    ...(related.length > 1 && !optional
+      ? [
+        heading("Другие семестры"),
+        wrap(
+          related.filter((x) => x.id !== d.id).map((x) =>
+            navChip(
+              x.semester === null
+                ? "Без семестра"
+                : String(x.semester) + " семестр",
+              page(
+                route("/discipline", { id: plan.id, discipline: x.id }),
+                x.name,
+              ),
+            )
+          ),
+        ),
+      ]
+      : []),
+    gap(),
+    wrap([
+      navChip(
+        "К семестру",
+        page(
+          route("/semester", {
+            id: plan.id,
+            semester: d.semester ?? "unknown",
+          }),
+        ),
       ),
-      "secondary",
-    ),
-    gap(),
-    card([
-      button("Найти материалы в банке знаний", {
-        actionType: "openDeepLink",
-        location: "/services/knowledge-bank",
-      }, "secondary"),
-      gap(8),
-      button("Открыть расписание", {
-        actionType: "openDeepLink",
-        location: "/schedule",
-      }, "secondary"),
+      ...(plan.source_url
+        ? [
+          navChip("PDF плана", { actionType: "openUrl", url: plan.source_url }),
+        ]
+        : []),
     ]),
-    gap(),
-    sourceCard(plan),
   ], { note: literal(record.note, 2000) });
 }
 function reminderScreen(plan: Plan, params: Json): Node {
@@ -921,17 +1047,19 @@ function reminderScreen(plan: Plan, params: Json): Node {
 }
 function comparisonSummary(rows: Discipline[]): string {
   if (!rows.length) return "Нет в извлечённых данных";
-  const total = (key: "hours" | "credits") =>
-    rows.some((x) => x[key] === null)
-      ? null
-      : rows.reduce((n, x) => n + (x[key] ?? 0), 0);
+  const load = workloadOf(rows, new Set(rows.map((d) => d.id)));
   const semesters = [...new Set(rows.map((x) => x.semester))].sort((a, b) =>
     (a ?? 99) - (b ?? 99)
   ).map((x) => x === null ? "?" : String(x));
   const controls = [...new Set(rows.flatMap((x) => x.control_forms))];
-  return `Семестры: ${semesters.join(", ")}\n${fmt(total("hours"), "ч")} · ${
-    fmt(total("credits"), "з.е.")
-  }${controls.length ? `\n${controls.join(", ")}` : ""}`;
+  const kind = rows.some((d) => d.is_optional)
+    ? "Факультатив"
+    : rows.some((d) => d.choice_group)
+    ? "По выбору"
+    : "Обязательный предмет";
+  return `Семестры: ${semesters.join(", ")}\n${rangeLabel(load.hours, "ч")} · ${
+    rangeLabel(load.credits, "з.е.")
+  }\n${kind}${controls.length ? ` · ${controls.join(", ")}` : ""}`;
 }
 function compareScreen(data: Json, params: Json): Node {
   const left = planOf(data.plan), right = planOf(data.other);
@@ -974,7 +1102,7 @@ function compareScreen(data: Json, params: Json): Node {
     only_left: "В данных А",
     only_right: "В данных Б",
   };
-  return shell("Сравнение программ", "Два маршрута — понятные различия", [
+  return shell("Сравнение программ", "", [
     ...(left.quality !== "complete" || right.quality !== "complete" ||
         left.stale === true || right.stale === true
       ? [
@@ -995,7 +1123,7 @@ function compareScreen(data: Json, params: Json): Node {
       gap(8),
       text(left.title, "headlineStrong"),
       gap(8),
-      ...metadata(left),
+      ...metadata(left, true),
     ]),
     gap(),
     card([
@@ -1003,7 +1131,7 @@ function compareScreen(data: Json, params: Json): Node {
       gap(8),
       text(right.title, "headlineStrong"),
       gap(8),
-      ...metadata(right),
+      ...metadata(right, true),
     ]),
     gap(),
     text(
@@ -1012,12 +1140,12 @@ function compareScreen(data: Json, params: Json): Node {
       "muted",
     ),
     heading(
-      `${
+      `Различия в общих предметах · ${
         all.filter((x) => x.status === "changed").length
-      } различий в общих предметах`,
-      `${
+      }`,
+      `Совпадения по извлечённым данным · ${
         all.filter((x) => x.status === "same").length
-      } совпадений по извлечённым данным`,
+      }`,
     ),
     wrap(
       [["differences", "Различия"], ["all", "Все предметы"]].map((
