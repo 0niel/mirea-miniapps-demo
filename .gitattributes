@@ -1,0 +1,3 @@
+curriculum/data/*.json -text
+discounts/data/*.json -text
+data/*.json -text

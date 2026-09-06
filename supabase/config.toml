@@ -3,3 +3,15 @@ project_id = "ejzybbyjwtzbibrrwrli"
 [functions.miniapp-svc-iskra]
 verify_jwt = false
 import_map = "./functions/miniapp-svc-iskra/deno.json"
+
+[functions.miniapp-svc-learning-roadmap]
+verify_jwt = false
+import_map = "./functions/miniapp-svc-learning-roadmap/deno.json"
+
+[functions.miniapp-svc-student-discounts]
+verify_jwt = false
+import_map = "./functions/miniapp-svc-student-discounts/deno.json"
+
+[functions.miniapp-sync-student-data]
+verify_jwt = false
+import_map = "./functions/miniapp-sync-student-data/deno.json"
