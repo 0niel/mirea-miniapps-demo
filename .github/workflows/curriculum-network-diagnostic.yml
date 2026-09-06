@@ -1,0 +1,47 @@
+name: Curriculum network diagnostic
+on:
+  push:
+    branches: [curriculum-network-diagnostic]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fetch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Fetch public catalog
+        shell: python
+        run: |
+          import concurrent.futures, hashlib, json, urllib.error, urllib.request
+          def check(item):
+              host, browser = item
+              headers = {'Accept-Encoding': 'identity'}
+              if browser:
+                  headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'})
+              else:
+                  headers['User-Agent'] = 'RTU-Student-Curriculum/1.0 (+https://github.com/0niel/mirea-miniapps-demo)'
+              url = 'https://' + host + '/sveden/education/eduop/'
+              result = {'url': url, 'browser': browser}
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as response:
+                      body = response.read(64 * 1024 * 1024 + 1)
+                      result.update(status=response.status, final_url=response.url, bytes=len(body), sha256=hashlib.sha256(body).hexdigest(), plan_markers=body.count(b'eduPlan'))
+              except urllib.error.HTTPError as error:
+                  result.update(status=error.code, server=error.headers.get('Server'), error=error.read(250).decode('utf-8', 'replace'))
+              except Exception as error:
+                  result['error'] = str(error)
+              return result
+          with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+              results = list(pool.map(check, [(host, browser) for host in ['www.mirea.ru', 'mirea.ru'] for browser in [False, True]]))
+          for result in results:
+              print(json.dumps(result, ensure_ascii=False), flush=True)
+          if not any(result.get('status') == 200 and result.get('plan_markers', 0) > 100 for result in results):
+              raise SystemExit(1)
