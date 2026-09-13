@@ -339,3 +339,50 @@ Deno.test("moderation page stays below the proxy response limit", () => {
   }, { queue }));
   assertEquals(new TextEncoder().encode(screen).length < 512 * 1024, true);
 });
+
+Deno.test("pending likes open from home and can be answered in place", () => {
+  const state = {
+    adultConfirmed: true,
+    profile: { displayName: "Лев", status: "active", photoStatus: "none" },
+    matchCount: 0,
+    pendingLikes: 9,
+    decisionsRemaining: 5,
+  };
+  const admirer = {
+    publicId: "9fb788a6-05d1-48e9-b8a8-d966ac60c724",
+    displayName: "Аня",
+    age: 21,
+    status: "active",
+    photoStatus: "none",
+    intent: "date",
+    interests: ["кино"],
+    sharedInterests: ["кино"],
+    opener: "Привет! Тоже любишь кино?",
+    sameIntent: true,
+  };
+  const home = buildScreen("/", state, { pending: [admirer, admirer] });
+  const homeNodes = nodes(home);
+  assertEquals(serialized(home).includes('"value":"2"'), true);
+  assertEquals(
+    homeNodes.some((node) =>
+      node.actionType === "openPage" && node.path === "/pending"
+    ),
+    true,
+  );
+  const pending = buildScreen("/pending", state, { pending: [admirer] });
+  const pendingNodes = nodes(pending);
+  assertEquals(serialized(pending).includes("Тебя лайкнули: 1"), true);
+  assertEquals(serialized(pending).includes("Тоже любишь кино?"), true);
+  const decisions = pendingNodes.filter((node) =>
+    node.actionType === "networkRequest" && node.url === "/api/decide"
+  );
+  assertEquals(decisions.length, 2);
+  assertEquals(
+    decisions.some((node) =>
+      (node.body as Record<string, unknown>).decision === "like"
+    ),
+    true,
+  );
+  const empty = serialized(buildScreen("/pending", state, { pending: [] }));
+  assertEquals(empty.includes("Ждать некого"), true);
+});

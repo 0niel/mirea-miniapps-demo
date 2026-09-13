@@ -64,7 +64,6 @@ begin
   assert result -> 'me' ->> 'group_name' = 'ТЕСТ-01-24';
   assert result -> 'me' ->> 'reviews' = '0';
   assert result -> 'me' -> 'level' ->> 'name' = 'Новичок';
-  assert jsonb_array_length(result -> 'me' -> 'badges') = 9;
   assert exists (select 1 from jsonb_array_elements(result -> 'today') x where x ->> 'id' = t1::text);
   assert not exists (select 1 from jsonb_array_elements(result -> 'today') x where x ->> 'id' = t2::text);
   assert (select count(*) = 2 from jsonb_array_elements(result -> 'recommend'));
@@ -159,8 +158,6 @@ begin
   assert result -> 'me' ->> 'rank' = '1';
   assert jsonb_array_length(result -> 'my_reviews') = 1;
   assert result -> 'my_reviews' -> 0 -> 'card' ->> 'id' = t1::text;
-  assert exists (select 1 from jsonb_array_elements(result -> 'me' -> 'badges') x where x ->> 'id' = 'pioneer' and x ->> 'earned' = 'true');
-  assert exists (select 1 from jsonb_array_elements(result -> 'me' -> 'badges') x where x ->> 'id' = 'five' and x ->> 'earned' = 'false' and x ->> 'progress' = '1');
   result := public.miniapp_teacher_reviews_dispatch(b, 'vote', jsonb_build_object('id', v_review_id, 'helpful', false));
   assert result ->> 'helpful' = '0';
   failed := false;

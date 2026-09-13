@@ -59,6 +59,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075734_create_student_data_sync.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906090902_refine_learning_plan_choices.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260913120000_create_teacher_reviews_miniapp.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260913180000_teacher_reviews_drop_badges.sql
           psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-svc-learning-roadmap/security_test.sql
           psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-svc-teacher-reviews/security_test.sql
           psql -v ON_ERROR_STOP=1 -f discounts/tests/schema.sql

@@ -124,6 +124,9 @@ async function screenResponse(
       extra.matches =
         objectOf(await dispatch(supabase, userId, "matches")).matches;
     }
+    if (status === "active" && ["/", "/pending"].includes(route.path)) {
+      extra.pending = objectOf(await pendingLikes(supabase, userId)).pending;
+    }
   }
 
   const signable: JsonObject = { state: stateObject, ...extra };
@@ -132,6 +135,9 @@ async function screenResponse(
   }
   if ("matches" in signable) {
     signable.matches = redactUnapprovedPhotoPaths(signable.matches);
+  }
+  if ("pending" in signable) {
+    signable.pending = redactUnapprovedPhotoPaths(signable.pending);
   }
   const signed = await attachSignedPhotoUrls(supabase, signable);
   const signedObject = objectOf(signed);
@@ -415,6 +421,17 @@ async function dispatch(
     p_user_id: userId,
     p_action: action,
     p_payload: payload,
+  });
+  if (error) throw new DispatchError(error.message, error.code ?? "");
+  return data;
+}
+
+async function pendingLikes(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<unknown> {
+  const { data, error } = await supabase.rpc("iskra_pending_likes", {
+    p_user_id: userId,
   });
   if (error) throw new DispatchError(error.message, error.code ?? "");
   return data;

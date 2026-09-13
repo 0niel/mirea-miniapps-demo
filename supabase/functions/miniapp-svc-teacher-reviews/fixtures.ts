@@ -3,15 +3,6 @@ import type { Json } from "./domain.ts";
 export const teacherId = "22222222-2222-4222-8222-222222222222";
 export const otherId = "33333333-3333-4333-8333-333333333333";
 export const thirdId = "44444444-4444-4444-8444-444444444444";
-const badge = (
-  id: string,
-  title: string,
-  emoji: string,
-  hint: string,
-  earned: boolean,
-  progress: number,
-  goal: number,
-): Json => ({ id, title, emoji, hint, earned, progress, goal });
 export const me: Json = {
   reviews: 3,
   helpful: 4,
@@ -36,73 +27,6 @@ export const me: Json = {
   group_done: 3,
   has_group: true,
   group_name: "ИКБО-40-26",
-  badges: [
-    badge("first", "Первый отзыв", "🎉", "Оставьте первый отзыв", true, 1, 1),
-    badge(
-      "five",
-      "Пять преподов",
-      "✋",
-      "Оцените пятерых преподавателей",
-      false,
-      3,
-      5,
-    ),
-    badge(
-      "fifteen",
-      "Знаток кафедры",
-      "🔥",
-      "Пятнадцать отзывов",
-      false,
-      3,
-      15,
-    ),
-    badge(
-      "writer",
-      "Летописец",
-      "✍️",
-      "Три отзыва с текстом от 60 символов",
-      false,
-      2,
-      3,
-    ),
-    badge(
-      "group",
-      "Голос группы",
-      "📣",
-      "Оцените троих преподавателей своей группы",
-      true,
-      3,
-      3,
-    ),
-    badge(
-      "helpful",
-      "Полезный",
-      "💡",
-      "Десять отметок «полезно» от других студентов",
-      false,
-      4,
-      10,
-    ),
-    badge(
-      "pioneer",
-      "Первопроходец",
-      "🚀",
-      "Первым оцените преподавателя",
-      true,
-      1,
-      1,
-    ),
-    badge(
-      "waves",
-      "На волне",
-      "🌊",
-      "Отзывы в трёх разных неделях",
-      false,
-      2,
-      3,
-    ),
-    badge("top", "В топе", "🏅", "Войдите в топ-10 рецензентов", true, 1, 1),
-  ],
 };
 export const newcomer: Json = {
   ...me,
@@ -126,11 +50,6 @@ export const newcomer: Json = {
   group_done: 0,
   has_group: false,
   group_name: null,
-  badges: (me.badges as Json[]).map((b) => ({
-    ...b,
-    earned: false,
-    progress: 0,
-  })),
 };
 export const teacher: Json = {
   id: teacherId,

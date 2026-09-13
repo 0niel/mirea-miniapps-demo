@@ -744,7 +744,11 @@ function home(state: Json): Node {
         onTap: {
           actionType: "runIf",
           condition: "state.searching",
-          then: { actionType: "setState", key: "filtersOpen", toggle: true },
+          then: {
+            actionType: "setState",
+            key: "filtersOpen",
+            toggle: true,
+          },
           else: multi(setValues({ filtersOpen: true }), search),
         },
       },
@@ -1273,7 +1277,7 @@ function teacher(state: Json, id: string): Node {
       : [
         empty(
           "Отзывов пока нет",
-          "Оставьте первый — поможете другим студентам и получите значок «Первопроходец».",
+          "Оставьте первый — поможете другим студентам и продвинетесь к достижению «Критик».",
           btn("Оставить отзыв", open(reviewPath(id), "Отзыв"), "secondary"),
           "✍️",
         ),
@@ -1717,8 +1721,8 @@ function top(state: Json): Node {
                   ? myStreak > 0
                     ? `В топ-10 ${
                       count(myStreak, ["день", "дня", "дней"])
-                    } подряд. Продержитесь неделю — получите значок «В топе».`
-                    : "Попадите в топ-10 и продержитесь 7 дней — получите значок «В топе»."
+                    } подряд. Продержитесь неделю и закрепитесь среди лучших.`
+                    : "Попадите в топ-10 и продержитесь 7 дней подряд."
                   : "Оставьте первый отзыв — 10 XP сразу, ещё +5 за развёрнутый текст.",
                 "caption",
                 "muted",
@@ -1821,33 +1825,56 @@ function top(state: Json): Node {
     },
   ], initial);
 }
-function badgeTile(b: Json): Node {
-  const earned = b.earned === true;
-  return {
-    type: "appCard",
-    padding: 10,
-    radius: 16,
-    width: 104,
-    ...(earned ? { tinted: true } : {}),
-    semanticsLabel: `${string(b.title)}: ${
-      earned ? "получен" : string(b.hint)
-    }`,
-    child: col([
-      t(b.emoji, "heading", earned ? undefined : "muted", { align: "center" }),
-      gap(4),
-      t(b.title, "captionStrong", earned ? "ink" : "muted", {
-        align: "center",
-        maxLines: 2,
-      }),
-      gap(2),
-      t(
-        earned ? "Получен" : `${number(b.progress, 0)}/${number(b.goal, 0)}`,
-        "micro",
-        earned ? "success" : "muted",
-        { align: "center" },
-      ),
-    ], { crossAxisAlignment: "center" }),
-  };
+const achievementSteps: [number, string, string][] = [
+  [1, "Первый отзыв", "📝"],
+  [3, "Критик", "⭐"],
+  [10, "Рецензент", "🎓"],
+  [25, "Голос курса", "🏅"],
+];
+function achievementsCard(reviews: number): Node {
+  const next = achievementSteps.find(([goal]) => reviews < goal);
+  return card([
+    ...achievementSteps.flatMap(([goal, title, emoji], i) => [
+      row([
+        {
+          type: "appIconTile",
+          emoji,
+          size: 36,
+          radius: 12,
+          color: reviews >= goal ? "success" : "accent",
+        },
+        hgap(10),
+        expanded(col([
+          t(title, "labelStrong", reviews >= goal ? "ink" : "muted"),
+          gap(2),
+          t(
+            reviews >= goal
+              ? "Получено"
+              : `${count(goal, ["отзыв", "отзыва", "отзывов"])} · ${
+                Math.min(reviews, goal)
+              }/${goal}`,
+            "caption",
+            reviews >= goal ? "success" : "muted",
+          ),
+        ])),
+        ...(reviews >= goal
+          ? [{ type: "appLineIcon", icon: "check", size: 18, color: "success" }]
+          : []),
+      ]),
+      ...(i < achievementSteps.length - 1 ? [gap(10)] : []),
+    ]),
+    gap(12),
+    progressBar(next ? reviews / next[0] : 1, next ? "accent" : "success"),
+    gap(10),
+    btn(
+      "Открыть достижения",
+      { actionType: "openDeepLink", location: "/profile" },
+      "secondary",
+      {
+        icon: "arrowRight",
+      },
+    ),
+  ]);
 }
 function questRow(
   title: string,
@@ -1875,8 +1902,6 @@ function me(state: Json): Node {
     card: presentTeacher(object(r.card)),
   }));
   const followed = list(state.followed).map(presentTeacher);
-  const badges = list(me.badges);
-  const earned = badges.filter((b) => b.earned === true).length;
   const week = number(me.week_reviews, 0), goal = number(me.week_goal, 2);
   const groupTotal = number(me.group_total, 0),
     groupDone = number(me.group_done, 0);
@@ -1923,8 +1948,8 @@ function me(state: Json): Node {
         compact("Рейтинг", open("/top", "Топ"), "arrowRight"),
       ),
     ]),
-    section("Значки", undefined, { meta: `${earned} из ${badges.length}` }),
-    wrap(badges.map(badgeTile)),
+    section("Достижения", "Отзывы засчитываются в профиле приложения"),
+    achievementsCard(number(me.reviews, 0)),
     section("Мои отзывы", undefined, { meta: `${myReviews.length}` }),
     ...(myReviews.length
       ? myReviews.flatMap((r) => {
@@ -1963,7 +1988,7 @@ function me(state: Json): Node {
       : [
         empty(
           "Отзывов ещё нет",
-          "Первый отзыв даст 10 XP и значок «Первый отзыв».",
+          "Первый отзыв даст 10 XP и откроет достижение «Первый отзыв».",
           btn("Кого оценить", open("/recommend", "Кого оценить"), "secondary"),
           "✍️",
         ),
@@ -2056,7 +2081,7 @@ function recommend(state: Json): Node {
               ? "В этом семестре у группы пока нет пар в расписании."
               : done >= total
               ? "Вы оценили всех преподавателей группы 🎉"
-              : `Оценено ${done} из ${total} преподавателей семестра. Три отзыва — значок «Голос группы».`,
+              : `Оценено ${done} из ${total} преподавателей семестра.`,
             "caption",
             "muted",
           ),

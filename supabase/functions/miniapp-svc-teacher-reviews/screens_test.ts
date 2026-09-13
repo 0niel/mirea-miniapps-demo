@@ -224,17 +224,19 @@ Deno.test("top switches boards through fetch and shows the student race", () => 
     ),
   );
 });
-Deno.test("profile lists quests, badges, own reviews and follows", () => {
+Deno.test("profile lists quests, achievements, own reviews and follows", () => {
   const screen = buildScreen("/me", fx.meState);
   const all = nodes(screen);
   assert(hasText(screen, "Неделя отзывов"));
   assert(hasText(screen, "Оценено 3 из 8 преподавателей ИКБО-40-26"));
   assert(hasText(screen, "2 дня подряд среди лучших рецензентов"));
+  assert(hasText(screen, "Достижения"));
+  assert(hasText(screen, "3/10"));
   assert(
-    all.filter((n) => n.type === "appCard" && n.width === 104).length === 9,
+    all.some((n) =>
+      n.actionType === "openDeepLink" && n.location === "/profile"
+    ),
   );
-  assert(hasText(screen, "4 из 9"));
-  assert(hasText(screen, "3/5"));
   assert(
     all.filter((n) =>
       n.actionType === "openPage" && String(n.path).startsWith("/review?id=")
@@ -248,7 +250,7 @@ Deno.test("profile lists quests, badges, own reviews and follows", () => {
     followed: [],
   });
   assert(hasText(empty, "Отзывов ещё нет"));
-  assert(hasText(empty, "0 из 9"));
+  assert(hasText(empty, "0/1"));
 });
 Deno.test("recommendations split today and pending and handle missing group", () => {
   const screen = buildScreen("/recommend", fx.recommendState);

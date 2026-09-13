@@ -4,10 +4,11 @@
 
 `miniapp-svc-teacher-reviews` — отдельная страница отзывов о преподавателях поверх общей таблицы `core.teacher_reviews`: поиск по фамилии и предмету, фильтры и сортировки, профиль с оценками по понятности, лояльности и пользе, распределением и похожими преподавателями. Топы по шести критериям с общим и групповым охватом, серии дней в топ-10 с рекордами, рейтинг рецензентов с опциональным показом имени.
 
-Студентам показываются преподаватели их группы без отзыва, сегодняшние пары, недельное и групповое задания, девять значков и уровни за очки. Голоса «полезно», подписки и дневные снимки топов хранятся в схеме `miniapp_teacher_reviews`; сам отзыв пишется в общую таблицу и виден в расписании приложения.
+Студентам показываются преподаватели их группы без отзыва, сегодняшние пары, недельное и групповое задания и уровни за очки. Отзывы засчитываются в достижения профиля приложения. Голоса «полезно», подписки и дневные снимки топов хранятся в схеме `miniapp_teacher_reviews`; сам отзыв пишется в общую таблицу и виден в расписании приложения.
 
 ```bash
 supabase db query --linked --project-ref ejzybbyjwtzbibrrwrli --file supabase/migrations/20260913120000_create_teacher_reviews_miniapp.sql
+supabase db query --linked --project-ref ejzybbyjwtzbibrrwrli --file supabase/migrations/20260913180000_teacher_reviews_drop_badges.sql
 supabase functions deploy miniapp-svc-teacher-reviews --project-ref ejzybbyjwtzbibrrwrli --use-api
 ```
 
@@ -71,7 +72,10 @@ supabase functions deploy miniapp-svc-learning-roadmap miniapp-svc-student-disco
 
 ## Искра
 
+Экран «Ждут ответа» показывает входящие симпатии с первым сообщением и позволяет ответить лайком или пропустить прямо из списка.
+
 - `supabase/migrations/20260904180731_create_iskra_dating_mini_app.sql`
+- `supabase/migrations/20260913160000_iskra_pending_likes.sql`
 - `supabase/functions/miniapp-svc-iskra`
 
 ## Витрина возможностей

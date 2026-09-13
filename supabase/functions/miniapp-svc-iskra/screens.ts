@@ -751,9 +751,16 @@ function candidateScreen(
   ], { radius: 28 });
 }
 
-function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
+function homeScreen(
+  stateValue: unknown,
+  candidateValue: unknown,
+  pendingValue?: unknown,
+): Widget {
   const state = objectOf(stateValue);
   const profile = objectOf(state.profile);
+  const pendingCount = Array.isArray(pendingValue)
+    ? pendingValue.length
+    : Number(state.pendingLikes ?? 0);
   const photoStatus = stringOf(profile.photoStatus);
   const decisionsRemaining = Math.max(
     0,
@@ -801,11 +808,18 @@ function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
       {
         type: "expanded",
         child: {
-          type: "appSmartChip",
-          emoji: "✨",
-          label: "Ждут ответа",
-          value: String(state.pendingLikes ?? 0),
-          tone: "warn",
+          type: "appCard",
+          padding: 0,
+          radius: 16,
+          semanticsLabel: `Ждут ответа: ${pendingCount}. Открыть`,
+          onTap: openPage("/pending", "Ждут ответа"),
+          child: {
+            type: "appSmartChip",
+            emoji: "✨",
+            label: "Ждут ответа",
+            value: String(pendingCount),
+            tone: "warn",
+          },
         },
       },
     ]),
@@ -847,11 +861,24 @@ function homeScreen(stateValue: unknown, candidateValue: unknown): Widget {
       children: [
         {
           type: "appListRow",
+          title: "Ждут ответа",
+          subtitle: pendingCount > 0
+            ? `${pendingCount} ${pluralPeople(pendingCount)}`
+            : "Здесь появятся те, кому ты понравился",
+          icon: "bolt",
+          iconColor: "warn",
+          isFirst: true,
+          ...(pendingCount > 0
+            ? { trailing: { type: "appCountBadge", count: pendingCount } }
+            : {}),
+          onTap: openPage("/pending", "Ждут ответа"),
+        },
+        {
+          type: "appListRow",
           title: "Мои мэтчи",
           subtitle: "Контакт откроется только по взаимному согласию",
           icon: "heart",
           iconColor: "accent",
-          isFirst: true,
           onTap: openPage("/matches", "Мэтчи"),
         },
         {
@@ -1081,6 +1108,193 @@ function matchCard(matchValue: unknown): Widget {
       stringOf(profile.displayName),
     ),
   };
+}
+
+function pluralPeople(count: number): string {
+  const last = count % 10;
+  const tens = count % 100;
+  if (last === 1 && tens !== 11) return "человек лайкнул тебя";
+  return "человек лайкнули тебя";
+}
+
+function pendingCard(
+  admirerValue: unknown,
+  decisionsRemaining: number,
+): Widget {
+  const admirer = objectOf(admirerValue);
+  const interests = Array.isArray(admirer.interests) ? admirer.interests : [];
+  const sharedInterests = new Set(
+    Array.isArray(admirer.sharedInterests)
+      ? admirer.sharedInterests.map(String)
+      : [],
+  );
+  const opener = stringOf(admirer.opener, 240);
+  const publicId = stringOf(admirer.publicId, 36);
+  const openerId = `opener-${publicId}`;
+  return card([
+    profilePhoto(admirer, 220),
+    gap(14),
+    row([
+      {
+        type: "expanded",
+        child: text(
+          `${stringOf(admirer.displayName)}, ${admirer.age}`,
+          "section",
+        ),
+      },
+      {
+        type: "appTag",
+        label: intentLabel(admirer.intent),
+        tone: admirer.sameIntent === true ? "success" : "accent",
+        withDot: admirer.sameIntent === true,
+      },
+    ]),
+    gap(8),
+    opener
+      ? card([
+        text("Первое сообщение", "caption", "muted"),
+        gap(4),
+        text(`«${opener}»`, "body"),
+      ], { color: "surface2", radius: 16 })
+      : text(
+        stringOf(admirer.bio) || "Лайк без сообщения, но с интересом.",
+        "body",
+        "muted",
+      ),
+    ...(interests.length > 0
+      ? [
+        gap(10),
+        {
+          type: "wrap",
+          spacing: 8,
+          runSpacing: 8,
+          children: interests.map((interest) => ({
+            type: "appTag",
+            label: sharedInterests.has(String(interest))
+              ? `Общее · ${String(interest)}`
+              : String(interest),
+            tone: sharedInterests.has(String(interest)) ? "accent" : "mute",
+            withDot: sharedInterests.has(String(interest)),
+          })),
+        },
+      ]
+      : []),
+    gap(14),
+    {
+      type: "form",
+      child: column([
+        {
+          type: "appInputField",
+          id: openerId,
+          label: "Ответное сообщение",
+          placeholder: "Необязательно",
+          maxLength: 240,
+          multiline: true,
+          minLines: 1,
+          maxLines: 3,
+        },
+        gap(12),
+        row([
+          {
+            type: "expanded",
+            child: button(
+              "Пропустить",
+              request("/api/decide", {
+                targetId: publicId,
+                decision: "pass",
+              }),
+              "secondary",
+              { icon: "close" },
+            ),
+          },
+          { type: "sizedBox", width: 10 },
+          {
+            type: "expanded",
+            child: button(
+              decisionsRemaining > 0 ? "Взаимно" : "Лимит на сегодня",
+              request(
+                "/api/decide",
+                {
+                  targetId: publicId,
+                  decision: "like",
+                  opener: { actionType: "getFormValue", id: openerId },
+                },
+                openPage(`/after-like?id=${publicId}`, "Это взаимно"),
+              ),
+              "primary",
+              { icon: "heart", enabled: decisionsRemaining > 0 },
+            ),
+          },
+        ]),
+      ]),
+    },
+    gap(6),
+    button(
+      "Пожаловаться или скрыть",
+      openPage(`/report?id=${publicId}&from=pending`, "Безопасность"),
+      "text",
+      { icon: "shield" },
+    ),
+  ], { radius: 28 });
+}
+
+function pendingScreen(pendingValue: unknown, stateValue: unknown): Widget {
+  const pending = Array.isArray(pendingValue) ? pendingValue : [];
+  const state = objectOf(stateValue);
+  const decisionsRemaining = Math.max(
+    0,
+    Math.min(40, Number(state.decisionsRemaining ?? 40)),
+  );
+  return shell([
+    card([
+      row([
+        {
+          type: "appIconTile",
+          emoji: "✨",
+          color: "warn",
+          size: 48,
+          radius: 16,
+        },
+        { type: "sizedBox", width: 12 },
+        {
+          type: "expanded",
+          child: column([
+            text(
+              pending.length > 0
+                ? `Тебя лайкнули: ${pending.length}`
+                : "Пока никто не ждёт",
+              "headlineStrong",
+            ),
+            text(
+              pending.length > 0
+                ? "Ответь лайком, и мэтч появится сразу"
+                : "Симпатии приходят сюда и хранятся 30 дней",
+              "subtext",
+              "muted",
+            ),
+          ]),
+        },
+      ]),
+    ], { tinted: true }),
+    gap(14),
+    ...(pending.length === 0
+      ? [
+        card([
+          {
+            type: "appEmptyState",
+            emoji: "🌙",
+            title: "Ждать некого",
+            subtitle: "Заполни анкету и смотри новые анкеты на главной",
+          },
+          gap(8),
+          button("На главную", returnHome(), "secondary"),
+        ]),
+      ]
+      : pending.flatMap((admirer) => [
+        pendingCard(admirer, decisionsRemaining),
+        gap(14),
+      ])),
+  ], "Ждут ответа");
 }
 
 function matchesScreen(matchesValue: unknown): Widget {
@@ -2126,7 +2340,8 @@ export function buildScreen(
     return pausedScreen(profile);
   }
 
-  if (path === "/") return homeScreen(state, extra.candidate);
+  if (path === "/") return homeScreen(state, extra.candidate, extra.pending);
+  if (path === "/pending") return pendingScreen(extra.pending, state);
   if (path === "/profile") {
     return profileScreen(profile, state.isModerator === true);
   }
