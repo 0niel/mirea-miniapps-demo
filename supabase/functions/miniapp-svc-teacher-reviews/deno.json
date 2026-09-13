@@ -1,0 +1,9 @@
+{
+  "imports": { "@supabase/supabase-js": "npm:@supabase/supabase-js@2.110.2" },
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "test": "deno test",
+    "check": "deno check index.ts",
+    "export": "deno run --allow-read --allow-write export_screens.ts"
+  }
+}

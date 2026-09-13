@@ -15,3 +15,7 @@ import_map = "./functions/miniapp-svc-student-discounts/deno.json"
 [functions.miniapp-sync-student-data]
 verify_jwt = false
 import_map = "./functions/miniapp-sync-student-data/deno.json"
+
+[functions.miniapp-svc-teacher-reviews]
+verify_jwt = false
+import_map = "./functions/miniapp-svc-teacher-reviews/deno.json"

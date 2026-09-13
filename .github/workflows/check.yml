@@ -58,11 +58,13 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075510_create_student_discounts_miniapp.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906075734_create_student_data_sync.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260906090902_refine_learning_plan_choices.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260913120000_create_teacher_reviews_miniapp.sql
           psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-svc-learning-roadmap/security_test.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-svc-teacher-reviews/security_test.sql
           psql -v ON_ERROR_STOP=1 -f discounts/tests/schema.sql
           psql -v ON_ERROR_STOP=1 -f supabase/functions/miniapp-sync-student-data/schema_test.sql
       - run: |
-          for service in miniapp-svc-learning-roadmap miniapp-svc-student-discounts miniapp-sync-student-data; do
+          for service in miniapp-svc-learning-roadmap miniapp-svc-student-discounts miniapp-svc-teacher-reviews miniapp-sync-student-data; do
             deno fmt --check "supabase/functions/$service"
             deno check --config "supabase/functions/$service/deno.json" --frozen "supabase/functions/$service/index.ts"
             deno lint "supabase/functions/$service"
