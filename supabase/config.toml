@@ -19,3 +19,7 @@ import_map = "./functions/miniapp-sync-student-data/deno.json"
 [functions.miniapp-svc-teacher-reviews]
 verify_jwt = false
 import_map = "./functions/miniapp-svc-teacher-reviews/deno.json"
+
+[functions.miniapp-svc-queue]
+verify_jwt = false
+import_map = "./functions/miniapp-svc-queue/deno.json"

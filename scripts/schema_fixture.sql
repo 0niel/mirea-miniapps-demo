@@ -64,6 +64,7 @@ create table core.schedule_item (
   term_id integer not null references core.term(id),
   kind text not null,
   title text not null,
+  lesson_type text,
   discipline_id uuid references core.schedule_disciplines(id),
   start_time time,
   end_time time,
