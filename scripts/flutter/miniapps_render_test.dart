@@ -104,6 +104,8 @@ void main() {
                 child: MiniAppScaffold(
                   title: name.startsWith('discount')
                       ? 'Скидки студентам'
+                      : name.startsWith('reviews')
+                      ? 'Отзывы о преподах'
                       : 'Траектория обучения',
                   body: MiniAppRunnerBody(
                     state: MiniAppRunnerState(status: .ready, screen: data),

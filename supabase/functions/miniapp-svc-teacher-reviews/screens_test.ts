@@ -196,7 +196,7 @@ Deno.test("top switches boards through fetch and shows the student race", () => 
   assert(
     all.filter((n) =>
       n.type === "appChip" && String(n.selected).startsWith("{{state.board ==")
-    ).length === 6,
+    ).length === 10,
   );
   assert(
     all.some((n) =>
@@ -210,7 +210,7 @@ Deno.test("top switches boards through fetch and shows the student race", () => 
   assert(
     all.some((n) =>
       n.type === "appSwitch" && Array.isArray(n.cases) &&
-      (n.cases as Json[]).length === 6
+      (n.cases as Json[]).length === 10
     ),
   );
   assert(hasText(screen, "Вы #4 · 60 XP"));
@@ -223,6 +223,24 @@ Deno.test("top switches boards through fetch and shows the student race", () => 
       (n.body as Json).show_in_leaderboard === true
     ),
   );
+});
+Deno.test("antitop has guarded mode changes, sample size and readable criteria", () => {
+  const screen = buildScreen("/top", fx.antitopState);
+  const all = nodes(screen);
+  const initial = (all.find((n) => n.type === "appStateScope") as Json)
+    .initial as Json;
+  assert(initial.anti === true && initial.board === "anti_overall");
+  const items = (initial.board_data as Json).items as Json[];
+  assert(
+    items[0].value_label === "2,1" && items.every((item) => item.medal === ""),
+  );
+  assert(hasText(screen, "Антитоп преподавателей"));
+  assert(hasText(screen, "От 5 отзывов"));
+  assert(hasText(screen, "Понятность {{item.clarity_label}}"));
+  assert(
+    all.some((n) => n.actionType === "runIf" && n.condition === "!state.busy"),
+  );
+  assert(all.some((n) => n.type === "appIf" && n.condition === "!state.busy"));
 });
 Deno.test("profile lists quests, achievements, own reviews and follows", () => {
   const screen = buildScreen("/me", fx.meState);

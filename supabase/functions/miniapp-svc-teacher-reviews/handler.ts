@@ -1,13 +1,13 @@
 import {
-  boards,
   constantTimeEqual,
   InputError,
   type Json,
   list,
   object,
   parseRoute,
-  presentBoardItem,
+  presentBoard,
   presentTeacher,
+  rankingBoards,
   ratingInput,
   scopes,
   slug,
@@ -16,7 +16,7 @@ import {
   textInput,
   uuid,
 } from "./domain.ts";
-import { buildScreen } from "./screens.ts";
+import { buildScreen, reviewPage } from "./screens.ts";
 
 export type Dispatch = (
   userId: string,
@@ -103,13 +103,24 @@ export function createHandler(serviceKey: string, dispatch: Dispatch) {
         const state = view
           ? await dispatch(userId, "state", { view, id: route.id })
           : {};
-        return json(buildScreen(route.path, state, { id: route.id }));
+        return json(
+          buildScreen(route.path, state, { id: route.id, page: route.page }),
+        );
       }
       if (input.kind !== "api") {
         throw new InputError("Invalid request kind", 400);
       }
       if (string(input.method).toUpperCase() !== "POST") {
         return json({ error: "Method not allowed" }, 405);
+      }
+      if (route.path === "/api/reviews") {
+        const page = Number(body.page ?? 0);
+        if (!Number.isSafeInteger(page) || page < 0) throw new InputError();
+        const state = await dispatch(userId, "state", {
+          view: "teacher",
+          id: idInput(body.id),
+        });
+        return json(reviewPage(state, page));
       }
       if (route.path === "/api/search") {
         const offset = Number(body.offset ?? 0);
@@ -142,19 +153,13 @@ export function createHandler(serviceKey: string, dispatch: Dispatch) {
         const board = string(body.board || "overall");
         const scope = string(body.scope || "all");
         if (
-          !Object.hasOwn(boards, board) || !["all", "group"].includes(scope)
+          !Object.hasOwn(rankingBoards, board) ||
+          !["all", "group"].includes(scope)
         ) {
           throw new InputError();
         }
         const result = await dispatch(userId, "top", { board, scope });
-        return json({
-          board,
-          scope,
-          count: Number(result.count ?? 0),
-          items: list(result.items).map((item) =>
-            presentBoardItem(board, item)
-          ),
-        });
+        return json(presentBoard({ ...result, board, scope }));
       }
       if (route.path === "/api/review") {
         const result = await dispatch(userId, "review", {

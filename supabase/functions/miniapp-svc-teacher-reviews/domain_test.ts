@@ -7,6 +7,7 @@ import {
   nextMilestone,
   parseRoute,
   plural,
+  presentBoardItem,
   presentReview,
   presentTeacher,
   ratingInput,
@@ -38,6 +39,28 @@ Deno.test("routes keep only uuid ids and reject traversal", () => {
   throws(() => parseRoute("/../secret"), 404);
   throws(() => parseRoute("//evil"), 404);
   throws(() => parseRoute("/teacher?id={{state.x}}"), 404);
+});
+Deno.test("antitop uses the selected metric and suppresses top medals and streaks", () => {
+  const raw = {
+    name: "Тестов Тест",
+    position: 1,
+    reviews: 12,
+    rating: 3.4,
+    score: 3.25,
+    clarity: 1.2,
+    loyalty: 4.5,
+    usefulness: 4.4,
+    top_days: 7,
+  };
+  const overall = presentBoardItem("anti_overall", raw);
+  assert(overall.value_label === "3,3");
+  assert(overall.medal === "" && overall.streak_label === "");
+  assert(overall.position_label === "1" && overall.anti === true);
+  const clarity = presentBoardItem("anti_clarity", raw);
+  assert(clarity.value_label === "1,2" && clarity.value_color === "danger");
+  assert(presentBoardItem("anti_loyalty", raw).value_label === "4,5");
+  assert(presentBoardItem("anti_usefulness", raw).value_label === "4,4");
+  assert(presentBoardItem("overall", raw).medal === "🥇");
 });
 Deno.test("text and rating inputs are bounded and template safe", () => {
   assert(textInput("  Хороший препод  ", 0, 100) === "Хороший препод");

@@ -211,6 +211,46 @@ export const topState: Json = {
     },
   ],
 };
+export const antitopState: Json = {
+  ...topState,
+  board: {
+    board: "anti_overall",
+    scope: "all",
+    count: 42,
+    items: [
+      {
+        ...teacher,
+        reviews: 18,
+        rating: 1.9,
+        score: 2.15,
+        clarity: 1.3,
+        loyalty: 2.4,
+        usefulness: 2.0,
+        position: 1,
+      },
+      {
+        ...other,
+        reviews: 9,
+        rating: 2.4,
+        score: 2.65,
+        clarity: 2.8,
+        loyalty: 1.8,
+        usefulness: 2.6,
+        position: 2,
+      },
+      {
+        ...third,
+        reviews: 5,
+        rating: 2.5,
+        score: 2.85,
+        clarity: 2.0,
+        loyalty: 3.0,
+        usefulness: 2.5,
+        position: 3,
+      },
+    ],
+  },
+};
 export const meState: Json = {
   me,
   my_reviews: [{ ...review, card: teacher }, {

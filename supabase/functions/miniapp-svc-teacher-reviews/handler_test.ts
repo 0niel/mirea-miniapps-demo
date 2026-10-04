@@ -20,6 +20,55 @@ const request = (body: Json, token = key) =>
 const api = (path: string, body: Json) =>
   request({ kind: "api", method: "POST", path, body });
 
+Deno.test("antitop boards validate and return criterion colors without medals", async () => {
+  const seen: Json[] = [];
+  const handler = createHandler(key, (_user, action, payload) => {
+    assert(action === "top");
+    seen.push(payload ?? {});
+    return Promise.resolve({
+      count: 1,
+      items: [{
+        id: teacher,
+        name: "Тестов Тест",
+        reviews: 7,
+        position: 1,
+        rating: 3.8,
+        score: 3.6,
+        clarity: 1,
+        loyalty: 5,
+        usefulness: 5,
+        top_days: 3,
+      }],
+    });
+  });
+  for (
+    const board of [
+      "anti_overall",
+      "anti_clarity",
+      "anti_loyalty",
+      "anti_usefulness",
+    ]
+  ) {
+    const response = await handler(api("/api/top", { board, scope: "group" }));
+    assert(response.status === 200);
+    const result = await response.json();
+    assert(result.anti === true && result.items[0].medal === "");
+    assert(result.scope === "group" && result.board === board);
+    if (board === "anti_clarity") {
+      assert(result.items[0].value_color === "danger");
+    }
+  }
+  assert(seen.length === 4);
+  assert(
+    (await handler(api("/api/top", { board: "anti_unknown" }))).status === 422,
+  );
+  assert(
+    (await handler(
+      api("/api/top", { board: "anti_overall", scope: "foreign" }),
+    )).status === 422,
+  );
+  assert(seen.length === 4);
+});
 Deno.test("handler rejects unauthorized context before dispatch", async () => {
   let calls = 0;
   const handler = createHandler(key, () => {

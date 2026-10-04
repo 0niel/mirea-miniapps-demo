@@ -13,6 +13,25 @@ export const boards: Record<string, { label: string; hint: string }> = {
   discussed: { label: "Обсуждаемые", hint: "Больше всего отзывов" },
   rising: { label: "Растущие", hint: "Новые отзывы за 30 дней" },
 };
+export const antiBoards: Record<string, { label: string; hint: string }> = {
+  anti_overall: {
+    label: "Общий",
+    hint: "Самые низкие оценки с поправкой на число отзывов",
+  },
+  anti_clarity: {
+    label: "Понятность",
+    hint: "На чьих парах сложнее разобраться",
+  },
+  anti_loyalty: {
+    label: "Лояльность",
+    hint: "Кто строже по отзывам студентов",
+  },
+  anti_usefulness: {
+    label: "Польза",
+    hint: "Чьи пары студенты считают менее полезными",
+  },
+};
+export const rankingBoards = { ...boards, ...antiBoards };
 export const sorts: Record<string, string> = {
   rating: "По рейтингу",
   reviews: "По отзывам",
@@ -87,7 +106,9 @@ export function ratingInput(v: unknown): number {
   }
   return n as number;
 }
-export function parseRoute(raw: unknown): { path: string; id: string } {
+export function parseRoute(
+  raw: unknown,
+): { path: string; id: string; page: number } {
   const s = string(raw) || "/";
   if (
     !s.startsWith("/") || s.startsWith("//") || /[\\\r\n{}]/.test(s) ||
@@ -95,7 +116,12 @@ export function parseRoute(raw: unknown): { path: string; id: string } {
   ) throw new InputError("Страница не найдена", 404);
   const url = new URL(s, "https://miniapp.invalid");
   const id = url.searchParams.get("id") ?? "";
-  return { path: url.pathname, id: uuid(id) ? id.toLowerCase() : "" };
+  const page = Number(url.searchParams.get("page") ?? 0);
+  return {
+    path: url.pathname,
+    id: uuid(id) ? id.toLowerCase() : "",
+    page: Number.isSafeInteger(page) && page >= 0 ? page : 0,
+  };
 }
 export function plural(n: number, forms: [string, string, string]): string {
   const abs = Math.abs(Math.trunc(n)) % 100;
@@ -220,6 +246,8 @@ export const levelNames = [
   "Легенда",
 ];
 export function boardValue(board: string, card: Json): string {
+  if (board === "anti_overall") return formatRating(card.score);
+  if (board.startsWith("anti_")) board = board.slice(5);
   const reviews = number(card.reviews, 0);
   if (board === "discussed") {
     return count(reviews, ["отзыв", "отзыва", "отзывов"]);
@@ -230,7 +258,38 @@ export function boardValue(board: string, card: Json): string {
 }
 export function presentBoardItem(board: string, raw: Json): Json {
   const card = presentTeacher(raw);
-  return { ...card, value_label: boardValue(board, card) };
+  const anti = Object.hasOwn(antiBoards, board);
+  const metric = board.startsWith("anti_") ? board.slice(5) : board;
+  const value = metric in dimensions
+    ? card[metric]
+    : anti
+    ? card.score
+    : card.rating;
+  return {
+    ...card,
+    anti,
+    medal: anti ? "" : card.medal,
+    streak_label: anti ? "" : card.streak_label,
+    value_label: boardValue(board, card),
+    value_color: ratingColor(value == null ? null : number(value)),
+    clarity_label: formatRating(card.clarity),
+    loyalty_label: formatRating(card.loyalty),
+    usefulness_label: formatRating(card.usefulness),
+    clarity_color: ratingColor(number(card.clarity)),
+    loyalty_color: ratingColor(number(card.loyalty)),
+    usefulness_color: ratingColor(number(card.usefulness)),
+  };
+}
+export function presentBoard(raw: Json): Json {
+  const board = string(raw.board || "overall");
+  return {
+    board,
+    scope: string(raw.scope || "all"),
+    anti: Object.hasOwn(antiBoards, board),
+    label: rankingBoards[board]?.label ?? "Общий",
+    count: number(raw.count),
+    items: list(raw.items).map((item) => presentBoardItem(board, item)),
+  };
 }
 export function presentReview(raw: Json): Json {
   const body = safeText(raw.body).trim();

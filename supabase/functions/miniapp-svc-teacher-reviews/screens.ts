@@ -1,4 +1,5 @@
 import {
+  antiBoards,
   boards,
   count,
   dimensions,
@@ -10,7 +11,7 @@ import {
   nextMilestone,
   number,
   object,
-  presentBoardItem,
+  presentBoard,
   presentReview,
   presentTeacher,
   ratingColor,
@@ -283,17 +284,19 @@ function voteState(reviews: Json[], prefix: string): Json {
   });
   return initial;
 }
-function shell(children: Node[], initial: Json = {}): Node {
+function shell(children: Node[], initial: Json = {}, paginate = false): Node {
+  const scroll: Node = {
+    type: "singleChildScrollView",
+    ...(paginate ? { key: "reviews-page-{{state.reviewPage.page}}" } : {}),
+    padding: { left: 16, right: 16, top: 12, bottom: 24 },
+    child: col(children),
+  };
   return {
     type: "scaffold",
     body: {
       type: "appStateScope",
       initial: { saving: false, saveError: null, ...initial },
-      child: {
-        type: "singleChildScrollView",
-        padding: { left: 16, right: 16, top: 12, bottom: 24 },
-        child: col(children),
-      },
+      child: paginate ? { type: "container", child: scroll } : scroll,
     },
   };
 }
@@ -620,6 +623,129 @@ function reviewCard(
       ? { onTap: open(teacherPath(teacherId), string(r.teacher_short)) }
       : {},
   );
+}
+export function reviewPage(state: Json, requestedPage = 0): Json {
+  const reviews = list(object(state.teacher).reviews_list).sort((a, b) =>
+    string(b.created_at).localeCompare(string(a.created_at)) ||
+    string(a.id).localeCompare(string(b.id))
+  );
+  const last = Math.max(0, Math.ceil(reviews.length / 20) - 1);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage >= 0
+    ? Math.min(requestedPage, last)
+    : 0;
+  return {
+    page,
+    last,
+    count: reviews.length,
+    start: page * 20 + 1,
+    end: Math.min((page + 1) * 20, reviews.length),
+    items: reviews.slice(page * 20, (page + 1) * 20).map((raw) => {
+      const r = presentReview(raw);
+      return { ...r, rating_tone: ratingTone(r.rating) };
+    }),
+  };
+}
+function ratingTone(value: unknown): string {
+  const color = ratingColor(number(value, 0));
+  return color === "success"
+    ? "live"
+    : color === "accent"
+    ? "accent"
+    : color === "warn"
+    ? "warn"
+    : "danger";
+}
+function reviewTemplate(): Node {
+  const voted =
+    "(state['v_' + item.id] == null ? item.voted : state['v_' + item.id])";
+  const helpful =
+    "(state['h_' + item.id] == null ? item.helpful : state['h_' + item.id])";
+  const flip = multi(
+    {
+      actionType: "setState",
+      key: "h_{{item.id}}",
+      expression: `${voted} ? ${helpful} - 1 : ${helpful} + 1`,
+    },
+    { actionType: "setState", key: "v_{{item.id}}", value: `{{!${voted}}}` },
+  );
+  const vote = multi(
+    flip,
+    mutation("/api/vote", {
+      id: "{{item.id}}",
+      helpful: `{{${voted}}}`,
+    }, flip),
+  );
+  const label =
+    `{{${helpful} > 0 ? 'Полезно · ' + str(${helpful}) : 'Полезно'}}`;
+  return col([
+    card([
+      row([
+        { type: "appAvatar", name: "{{item.author}}", size: 36 },
+        hgap(10),
+        expanded(col([
+          dyn("{{item.author}}", "labelStrong", undefined, { maxLines: 1 }),
+          gap(2),
+          dyn("{{item.date_label}}", "caption", "muted"),
+        ])),
+        hgap(8),
+        tag("★ {{item.rating_label}}", "{{item.rating_tone}}"),
+      ]),
+      gap(10),
+      ...Object.entries(dimensions).map(([key, dim]) =>
+        row([
+          expanded(t(dim.label, "caption", "muted")),
+          dyn(`{{item.stars_${key}}}`, "caption", "warn"),
+        ])
+      ),
+      {
+        type: "appIf",
+        condition: "item.body != ''",
+        child: col([
+          gap(10),
+          {
+            type: "appExpandableText",
+            key: "review-{{item.id}}",
+            text: "{{item.body}}",
+            maxLines: 4,
+            variant: "body",
+            expandLabel: "Читать полностью",
+            collapseLabel: "Свернуть",
+          },
+        ]),
+      },
+      gap(10),
+      row([
+        expanded(wrap([
+          {
+            type: "appIf",
+            condition: "item.mine",
+            child: badge("Ваш отзыв", "accent"),
+          },
+          {
+            type: "appIf",
+            condition: "item.mine && item.anonymous",
+            child: badge("Анонимно"),
+          },
+        ])),
+        {
+          type: "appIf",
+          condition: "item.mine",
+          child: compact(
+            "Изменить",
+            open("/review?id={{item.teacher_id}}", "Отзыв"),
+            "pencil",
+          ),
+          else: {
+            type: "appIf",
+            condition: voted,
+            child: compact(label, vote, "check"),
+            else: compact(label, vote, "bolt"),
+          },
+        },
+      ]),
+    ], { key: "review-card-{{item.id}}" }),
+    gap(10),
+  ]);
 }
 function smartChips(stats: Json): Node {
   return wrap([
@@ -1144,7 +1270,7 @@ function challengeCard(p: Json): Node {
     ]),
   };
 }
-function teacher(state: Json, id: string): Node {
+function teacher(state: Json, id: string, requestedPage = 0): Node {
   const raw = object(state.teacher);
   if (!string(raw.id)) {
     return shell([
@@ -1157,7 +1283,21 @@ function teacher(state: Json, id: string): Node {
     ]);
   }
   const p = presentTeacher(raw);
-  const reviews = list(raw.reviews_list).map(presentReview);
+  const reviews = reviewPage(state, requestedPage);
+  const loadReviews = (page: string): Node =>
+    multi(set("requestedReviewPage", page), {
+      actionType: "fetch",
+      path: "/api/reviews",
+      method: "POST",
+      body: { id, page },
+      saveAs: "reviewPage",
+      errorKey: "reviewsError",
+      onResult: { actionType: "hapticFeedback", style: "selection" },
+      onError: toast(
+        "Не удалось загрузить отзывы. Попробуйте ещё раз.",
+        "error",
+      ),
+    });
   const similar = list(raw.similar).map(presentTeacher);
   const my = raw.my_review ? presentReview(object(raw.my_review)) : null;
   const groups = number(raw.groups, 0);
@@ -1271,9 +1411,19 @@ function teacher(state: Json, id: string): Node {
         }),
       ),
     ]),
-    section("Отзывы", undefined, { meta: `${reviews.length}` }),
-    ...(reviews.length
-      ? reviews.flatMap((r, i) => [reviewCard(r, { slot: `r${i}` }), gap(10)])
+    section("Отзывы"),
+    dyn(
+      "{{state.reviewPage.count > 0 ? str(state.reviewPage.start) + '–' + str(state.reviewPage.end) + ' из ' + str(state.reviewPage.count) : '0 отзывов'}}",
+      "caption",
+      "muted",
+    ),
+    gap(10),
+    ...(number(reviews.count, 0) > 0
+      ? [{
+        type: "appForEach",
+        items: "state.reviewPage.items",
+        template: reviewTemplate(),
+      }]
       : [
         empty(
           "Отзывов пока нет",
@@ -1282,6 +1432,63 @@ function teacher(state: Json, id: string): Node {
           "✍️",
         ),
       ]),
+    {
+      type: "appIf",
+      condition: "state.reviewPage.last > 0",
+      child: card([
+        row([
+          expanded(t("Отзывы студентов", "labelStrong")),
+          badge(
+            "{{state.reviewPage.page + 1}} / {{state.reviewPage.last + 1}}",
+            "accent",
+          ),
+        ]),
+        gap(8),
+        {
+          type: "appProgressBar",
+          value:
+            "{{(state.reviewPage.page + 1) / (state.reviewPage.last + 1)}}",
+          color: "accent",
+          height: 4,
+        },
+        gap(12),
+        row([
+          expanded({
+            type: "appIf",
+            condition: "state.reviewPage.page > 0",
+            child: btn(
+              "Назад",
+              loadReviews("{{state.reviewPage.page - 1}}"),
+              "outline",
+            ),
+          }),
+          hgap(8),
+          expanded({
+            type: "appIf",
+            condition: "state.reviewPage.page < state.reviewPage.last",
+            child: btn(
+              "Дальше",
+              loadReviews("{{state.reviewPage.page + 1}}"),
+              "secondary",
+            ),
+          }),
+        ]),
+      ]),
+    },
+    {
+      type: "appIf",
+      condition: "state.reviewsError != null",
+      child: col([
+        gap(8),
+        t("Не удалось обновить отзывы", "caption", "muted"),
+        compact(
+          "Повторить",
+          loadReviews("{{state.requestedReviewPage}}"),
+          "refresh",
+        ),
+      ]),
+    },
+    gap(8),
     ...(similar.length
       ? [
         section("Похожие преподаватели", "Ведут те же дисциплины"),
@@ -1292,7 +1499,12 @@ function teacher(state: Json, id: string): Node {
         },
       ]
       : []),
-  ], { followed: p.followed === true, ...voteState(reviews, "r") });
+  ], {
+    followed: p.followed === true,
+    reviewPage: reviews,
+    requestedReviewPage: reviews.page,
+    reviewsError: null,
+  }, true);
 }
 function starRow(key: string, label: string): Node {
   const hints = ratingHints[key] ?? [];
@@ -1495,14 +1707,8 @@ function top(state: Json): Node {
     scope: string(board.scope || "all"),
     busy: false,
     loadError: null,
-    board_data: {
-      board: string(board.board || "overall"),
-      scope: string(board.scope || "all"),
-      count: number(board.count, 0),
-      items: list(board.items).map((item) =>
-        presentBoardItem(string(board.board || "overall"), item)
-      ),
-    },
+    anti: Object.hasOwn(antiBoards, string(board.board)),
+    board_data: presentBoard(board),
   };
   const fetch: Node = {
     actionType: "fetch",
@@ -1512,13 +1718,18 @@ function top(state: Json): Node {
     saveAs: "board_data",
     loadingKey: "busy",
     errorKey: "loadError",
-    onError: toast("Не удалось обновить топ. Попробуйте ещё раз.", "error"),
+    onError: toast("Не удалось обновить рейтинг. Попробуйте ещё раз.", "error"),
   };
+  const change = (...actions: Node[]): Node => ({
+    actionType: "runIf",
+    condition: "!state.busy",
+    then: multi(...actions, fetch),
+  });
   const boardChip = (value: string, label: string): Node => ({
     type: "appChip",
     label,
     selected: `{{state.board == '${value}'}}`,
-    onTap: multi(set("board", value), fetch),
+    onTap: change(set("board", value)),
   });
   const myRank = number(me.rank, 0);
   const myStreak = number(me.streak_days, 0);
@@ -1534,15 +1745,75 @@ function top(state: Json): Node {
       type: "appIf",
       condition: "state.tab == 0",
       child: col([
+        wrap([
+          {
+            type: "appChip",
+            label: "Топ",
+            selected: "{{!state.anti}}",
+            onTap: change(set("anti", false), set("board", "overall")),
+          },
+          {
+            type: "appChip",
+            label: "Антитоп",
+            selected: "{{state.anti}}",
+            onTap: change(set("anti", true), set("board", "anti_overall")),
+          },
+        ]),
+        gap(12),
+        {
+          type: "appIf",
+          condition: "state.anti",
+          child: card([
+            row([
+              {
+                type: "appIconTile",
+                child: t("↘", "headlineStrong", "danger"),
+                color: "danger",
+                size: 44,
+              },
+              hgap(12),
+              expanded(col([
+                t("Антитоп преподавателей", "headlineStrong"),
+                gap(4),
+                t("Где студентам сложнее", "caption", "muted"),
+              ])),
+            ]),
+            gap(12),
+            t(
+              "Низкие оценки первыми. Выберите критерий и откройте отзывы, чтобы понять детали.",
+              "caption",
+              "muted",
+            ),
+            gap(10),
+            wrap([
+              badge("От 5 отзывов", "warn"),
+              badge("По оценкам студентов", "mute"),
+            ]),
+          ], { tinted: true }),
+        },
+        gap(12),
         {
           type: "singleChildScrollView",
           scrollDirection: "horizontal",
           child: {
             type: "row",
             mainAxisSize: "min",
-            children: Object.entries(boards).flatMap((
-              [value, entry],
-            ) => [boardChip(value, entry.label), hgap(8)]),
+            children: [{
+              type: "appIf",
+              condition: "state.anti",
+              child: row(
+                Object.entries(antiBoards).flatMap((
+                  [value, entry],
+                ) => [boardChip(value, entry.label), hgap(8)]),
+                { mainAxisSize: "min" },
+              ),
+              else: row(
+                Object.entries(boards).flatMap((
+                  [value, entry],
+                ) => [boardChip(value, entry.label), hgap(8)]),
+                { mainAxisSize: "min" },
+              ),
+            }],
           },
         },
         ...(hasGroup
@@ -1553,13 +1824,13 @@ function top(state: Json): Node {
                 type: "appChip",
                 label: "Все",
                 selected: "{{state.scope == 'all'}}",
-                onTap: multi(set("scope", "all"), fetch),
+                onTap: change(set("scope", "all")),
               },
               {
                 type: "appChip",
                 label: `Моя группа · ${safeText(me.group_name)}`,
                 selected: "{{state.scope == 'group'}}",
-                onTap: multi(set("scope", "group"), fetch),
+                onTap: change(set("scope", "group")),
               },
             ]),
           ]
@@ -1568,7 +1839,9 @@ function top(state: Json): Node {
         {
           type: "appSwitch",
           value: "state.board",
-          cases: Object.entries(boards).map(([value, entry]) => ({
+          cases: Object.entries({ ...boards, ...antiBoards }).map((
+            [value, entry],
+          ) => ({
             when: value,
             child: t(entry.hint, "caption", "muted"),
           })),
@@ -1577,7 +1850,7 @@ function top(state: Json): Node {
         {
           type: "appIf",
           condition: "state.busy",
-          child: col([t("Обновляем топ…", "caption", "muted"), gap(8)]),
+          child: col([t("Обновляем рейтинг…", "caption", "muted"), gap(8)]),
         },
         {
           type: "appIf",
@@ -1588,7 +1861,7 @@ function top(state: Json): Node {
                 type: "appErrorState",
                 compact: true,
                 title: "Не удалось обновить",
-                message: "Показан последний загруженный топ.",
+                message: "Ниже — последний загруженный рейтинг.",
               },
               gap(8),
               compact("Повторить", fetch, "refresh"),
@@ -1601,7 +1874,7 @@ function top(state: Json): Node {
           condition: "state.board_data.items.length == 0 && !state.busy",
           child: empty(
             "Пока пусто",
-            "Нужны отзывы: в рейтинг попадают преподаватели с двумя и более оценками.",
+            "Для топа нужны хотя бы 2 отзыва, для антитопа — 5. Попробуйте выбрать «Все» или другой критерий.",
             btn(
               "Кого оценить",
               open("/recommend", "Кого оценить"),
@@ -1611,81 +1884,135 @@ function top(state: Json): Node {
           ),
         },
         {
-          type: "appForEach",
-          items: "state.board_data.items",
-          as: "column",
-          template: col([
-            {
-              type: "appCard",
-              padding: 12,
-              radius: 18,
-              onTap: open("/teacher?id={{item.id}}", "{{item.short}}"),
-              semanticsLabel:
-                "{{item.position_label}}. {{item.name}}. {{item.value_label}}",
-              child: row([
-                {
-                  type: "appIf",
-                  condition: "item.medal != ''",
-                  child: {
-                    type: "appIconTile",
-                    emoji: "{{item.medal}}",
-                    size: 40,
-                    radius: 12,
-                    color: "warn",
-                  },
-                  else: {
-                    type: "appIconTile",
-                    size: 40,
-                    radius: 12,
-                    color: "accent",
-                    child: dyn(
-                      "#{{item.position_label}}",
-                      "labelStrong",
-                      "accent",
-                    ),
-                  },
-                },
-                hgap(10),
-                { type: "appAvatar", name: "{{item.name}}", size: 40 },
-                hgap(10),
-                expanded(col([
-                  dyn("{{item.name}}", "headlineStrong", undefined, {
-                    maxLines: 2,
-                  }),
-                  gap(2),
-                  dyn("{{item.disciplines_label}}", "caption", "muted", {
-                    maxLines: 1,
-                  }),
+          type: "appIf",
+          condition: "!state.busy && state.board_data.items.length > 0",
+          child: col([
+            row([
+              expanded(
+                dyn(
+                  "{{state.board_data.anti ? 'Антитоп' : 'Топ'}} · {{state.board_data.label}}",
+                  "labelStrong",
+                ),
+              ),
+              badge(
+                "{{state.board_data.items.length}} из {{state.board_data.count}}",
+                "mute",
+              ),
+            ]),
+            gap(10),
+            dyn(
+              "{{state.board_data.scope == 'group' ? 'Преподаватели вашей группы' : 'Все преподаватели'}}",
+              "caption",
+              "muted",
+            ),
+            gap(10),
+          ]),
+        },
+        {
+          type: "appIf",
+          condition: "!state.busy",
+          child: {
+            type: "appForEach",
+            items: "state.board_data.items",
+            as: "column",
+            template: col([
+              {
+                type: "appCard",
+                padding: 12,
+                radius: 18,
+                onTap: open("/teacher?id={{item.id}}", "{{item.short}}"),
+                semanticsLabel:
+                  "{{item.position_label}}. {{item.name}}. {{item.value_label}}",
+                child: col([
+                  row([
+                    {
+                      type: "appIf",
+                      condition: "item.medal != ''",
+                      child: {
+                        type: "appIconTile",
+                        emoji: "{{item.medal}}",
+                        size: 40,
+                        radius: 12,
+                        color: "warn",
+                      },
+                      else: {
+                        type: "appIconTile",
+                        size: 40,
+                        radius: 12,
+                        color: "{{item.anti ? 'danger' : 'accent'}}",
+                        child: dyn(
+                          "#{{item.position_label}}",
+                          "labelStrong",
+                          "{{item.anti ? 'danger' : 'accent'}}",
+                        ),
+                      },
+                    },
+                    hgap(10),
+                    { type: "appAvatar", name: "{{item.name}}", size: 40 },
+                    hgap(10),
+                    expanded(col([
+                      dyn("{{item.name}}", "headlineStrong", undefined, {
+                        maxLines: 2,
+                      }),
+                      gap(2),
+                      dyn("{{item.disciplines_label}}", "caption", "muted", {
+                        maxLines: 1,
+                      }),
+                      {
+                        type: "appIf",
+                        condition: "item.streak_label != ''",
+                        child: col([
+                          gap(6),
+                          badge("{{item.streak_label}}", "warn"),
+                        ]),
+                      },
+                    ])),
+                    hgap(8),
+                    col([
+                      dyn(
+                        "{{item.value_label}}",
+                        "headlineStrong",
+                        "{{item.value_color}}",
+                      ),
+                      gap(2),
+                      dyn("{{item.reviews_label}}", "micro", "muted"),
+                    ], { crossAxisAlignment: "end", mainAxisSize: "min" }),
+                  ]),
                   {
                     type: "appIf",
-                    condition: "item.streak_label != ''",
+                    condition: "item.anti",
                     child: col([
-                      gap(6),
-                      badge("{{item.streak_label}}", "warn"),
+                      gap(12),
+                      wrap([
+                        badge(
+                          "Понятность {{item.clarity_label}}",
+                          "{{item.clarity_color}}",
+                        ),
+                        badge(
+                          "Лояльность {{item.loyalty_label}}",
+                          "{{item.loyalty_color}}",
+                        ),
+                        badge(
+                          "Польза {{item.usefulness_label}}",
+                          "{{item.usefulness_color}}",
+                        ),
+                      ]),
+                      gap(8),
+                      t("Читать отзывы →", "captionStrong", "accent"),
                     ]),
                   },
-                ])),
-                hgap(8),
-                col([
-                  dyn(
-                    "{{item.value_label}}",
-                    "headlineStrong",
-                    "{{item.rating_color}}",
-                  ),
-                  gap(2),
-                  dyn("{{item.reviews_label}}", "micro", "muted"),
-                ], { crossAxisAlignment: "end", mainAxisSize: "min" }),
-              ]),
-            },
-            gap(8),
-          ]),
+                ]),
+              },
+              gap(8),
+            ]),
+          },
         },
         gap(8),
         card([
           t("Как считается рейтинг", "captionStrong", "muted"),
           gap(6),
           t(
-            "Средняя из трёх оценок сглаживается по числу отзывов, чтобы один восторженный отзыв не выводил на первое место. Серия дней в топ-10 обновляется раз в сутки.",
+            "Общий рейтинг учитывает среднюю из трёх оценок и число отзывов. Антитоп показывает низкие оценки первыми и включает преподавателей с 5 отзывами и более. Общий балл сглажен, отдельные критерии — средние оценки от 1 до 5. Серия дней в топ-10 обновляется раз в сутки.",
             "caption",
             "muted",
           ),
@@ -2130,7 +2457,7 @@ export function buildScreen(
 ): Node {
   const state = object(stateInput), id = string(extra.id);
   if (path === "/") return home(state);
-  if (path === "/teacher") return teacher(state, id);
+  if (path === "/teacher") return teacher(state, id, number(extra.page, 0));
   if (path === "/review") return review(state, id);
   if (path === "/top") return top(state);
   if (path === "/me") return me(state);

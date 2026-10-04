@@ -52,6 +52,15 @@ const states: Record<string, [string, Json, Json?, Json?]> = {
     { tipsOpen: true, clarity: 4 },
   ],
   "reviews-top": ["/top", fx.topState],
+  "reviews-antitop": ["/top", fx.antitopState],
+  "reviews-antitop-empty": ["/top", {
+    ...fx.antitopState,
+    board: { board: "anti_overall", scope: "group", count: 0, items: [] },
+  }],
+  "reviews-antitop-loading": ["/top", fx.antitopState, {}, { busy: true }],
+  "reviews-antitop-error": ["/top", fx.antitopState, {}, {
+    loadError: "Ошибка сети",
+  }],
   "reviews-top-students": ["/top", fx.topState, {}, { tab: 1 }],
   "reviews-top-empty": ["/top", {
     ...fx.topState,
