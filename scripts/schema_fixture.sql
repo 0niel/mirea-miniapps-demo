@@ -9,7 +9,10 @@ grant usage on schema auth, core, extensions to service_role;
 create table auth.users (
   id uuid primary key,
   aud text,
-  role text
+  role text,
+  is_anonymous boolean default false,
+  created_at timestamptz,
+  email_confirmed_at timestamptz
 );
 create table core.organizations (id text primary key);
 insert into core.organizations values ('mirea');
@@ -40,28 +43,38 @@ create table core.mini_apps (
 create table core.term (
   id integer primary key,
   organization_id text not null references core.organizations(id),
+  code text,
+  title text,
   starts_on date not null,
   ends_on date not null
 );
 create table core.schedule_teachers (
   id uuid primary key default gen_random_uuid(),
   organization_id text not null references core.organizations(id),
-  full_name text not null check (length(trim(full_name)) > 0)
+  full_name text not null check (length(trim(full_name)) > 0),
+  normalized_name text,
+  identity_key text
 );
 create table core.schedule_groups (
   id uuid primary key default gen_random_uuid(),
   organization_id text not null references core.organizations(id),
-  name text not null
+  name text not null,
+  normalized_name text,
+  identity_key text
 );
 create table core.schedule_disciplines (
   id uuid primary key default gen_random_uuid(),
   organization_id text not null references core.organizations(id),
-  name text not null
+  name text not null,
+  normalized_name text,
+  identity_key text
 );
 create table core.schedule_item (
   id uuid primary key default gen_random_uuid(),
   organization_id text not null references core.organizations(id),
   term_id integer not null references core.term(id),
+  source_uid text,
+  content_hash text,
   kind text not null,
   title text not null,
   lesson_type text,

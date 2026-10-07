@@ -20,6 +20,57 @@ const request = (body: Json, token = key) =>
 const api = (path: string, body: Json) =>
   request({ kind: "api", method: "POST", path, body });
 
+Deno.test("service dispatch uses the protected session context", async () => {
+  const session = "33333333-3333-4333-8333-333333333333";
+  const handler = createHandler(
+    key,
+    (actor, action, payload, receivedSession) => {
+      assert(
+        actor === user && action === "vote" && receivedSession === session,
+      );
+      assert(payload?.helpful === true);
+      return Promise.resolve({ ok: true });
+    },
+  );
+  const result = await handler(request({
+    kind: "api",
+    method: "POST",
+    path: "/api/vote",
+    sessionId: session,
+    body: { id: teacher, helpful: true, sessionId: teacher },
+  }));
+  assert(result.status === 200);
+  const invalid = await handler(request({ sessionId: "invalid" }));
+  assert(invalid.status === 403);
+});
+
+Deno.test("account publication gates give safe actionable errors", async () => {
+  for (
+    const [hint, expected] of [
+      ["content_account_unverified", "Подтвердите аккаунт"],
+      ["content_account_cooldown", "24 часа"],
+      ["internal_sensitive_details", "Действие недоступно"],
+    ]
+  ) {
+    const handler = createHandler(
+      key,
+      () =>
+        Promise.reject({
+          code: "42501",
+          hint,
+          message: "private server details",
+        }),
+    );
+    const response = await handler(
+      api("/api/vote", { id: teacher, helpful: true }),
+    );
+    const result = await response.json();
+    assert(response.status === 403);
+    assert(result.error.includes(expected));
+    assert(!result.error.includes("private server details"));
+  }
+});
+
 Deno.test("antitop boards validate and return criterion colors without medals", async () => {
   const seen: Json[] = [];
   const handler = createHandler(key, (_user, action, payload) => {

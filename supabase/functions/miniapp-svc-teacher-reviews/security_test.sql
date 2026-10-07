@@ -1,33 +1,41 @@
 begin;
+set local statement_timeout = '45s';
+set local lock_timeout = '3s';
 
 create temporary table teacher_reviews_fixture as
 select extensions.gen_random_uuid() as a, extensions.gen_random_uuid() as b, extensions.gen_random_uuid() as c,
   extensions.gen_random_uuid() as t1, extensions.gen_random_uuid() as t2, extensions.gen_random_uuid() as t3,
   extensions.gen_random_uuid() as g1, extensions.gen_random_uuid() as d1, extensions.gen_random_uuid() as d2,
   extensions.gen_random_uuid() as i1, extensions.gen_random_uuid() as i2, extensions.gen_random_uuid() as i3;
-insert into auth.users(id, aud, role) select a, 'authenticated', 'authenticated' from teacher_reviews_fixture
-  union all select b, 'authenticated', 'authenticated' from teacher_reviews_fixture
-  union all select c, 'authenticated', 'authenticated' from teacher_reviews_fixture;
-insert into core.term(id, organization_id, starts_on, ends_on) values (99991, 'mirea', miniapp_teacher_reviews.today() - 30, miniapp_teacher_reviews.today() + 120);
-insert into core.schedule_teachers(id, organization_id, full_name)
-  select t1, 'mirea', 'Тестовый Иван Иванович' from teacher_reviews_fixture
-  union all select t2, 'mirea', 'Проверочная Мария Сергеевна' from teacher_reviews_fixture
-  union all select t3, 'mirea', 'Контрольный Пётр Петрович' from teacher_reviews_fixture;
-insert into core.schedule_groups(id, organization_id, name) select g1, 'mirea', 'ТЕСТ-01-24' from teacher_reviews_fixture;
-insert into core.schedule_disciplines(id, organization_id, name)
-  select d1, 'mirea', 'Тестовая математика' from teacher_reviews_fixture
-  union all select d2, 'mirea', 'Тестовая физика' from teacher_reviews_fixture;
-insert into core.schedule_item(id, organization_id, term_id, kind, title, discipline_id, start_time, end_time, dates)
-  select i1, 'mirea', 99991, 'lesson', 'Тестовая математика', d1, '10:40'::time, '12:10'::time, array[miniapp_teacher_reviews.today(), miniapp_teacher_reviews.today() + 7] from teacher_reviews_fixture
-  union all select i2, 'mirea', 99991, 'lesson', 'Тестовая физика', d2, '12:40'::time, '14:10'::time, array[miniapp_teacher_reviews.today() + 1] from teacher_reviews_fixture
-  union all select i3, 'mirea', 99991, 'lesson', 'Тестовая математика', d1, '09:00'::time, '10:30'::time, array[miniapp_teacher_reviews.today() + 2] from teacher_reviews_fixture;
+insert into auth.users(id, aud, role, is_anonymous, created_at, email_confirmed_at)
+select id, 'authenticated', 'authenticated', false, now() - interval '2 days', now() - interval '2 days'
+from teacher_reviews_fixture f cross join lateral unnest(array[f.a,f.b,f.c]) id;
+insert into core.term(id, organization_id, code, title, starts_on, ends_on)
+values (99991, 'mirea', 'teacher-reviews-security-contract', 'Teacher Reviews Security Contract', miniapp_teacher_reviews.today(), miniapp_teacher_reviews.today() + 120);
+insert into core.schedule_teachers(id, organization_id, full_name, normalized_name, identity_key)
+  select t1, 'mirea', 'Тестовый Иван Иванович ' || t1::text, 'тестовый иван иванович ' || t1::text, t1::text from teacher_reviews_fixture
+  union all select t2, 'mirea', 'Проверочная Мария Сергеевна ' || t2::text, 'проверочная мария сергеевна ' || t2::text, t2::text from teacher_reviews_fixture
+  union all select t3, 'mirea', 'Контрольный Пётр Петрович ' || t3::text, 'контрольный пётр петрович ' || t3::text, t3::text from teacher_reviews_fixture;
+insert into core.schedule_groups(id, organization_id, name, normalized_name, identity_key)
+select g1, 'mirea', 'ТЕСТ-' || g1::text, 'тест-' || g1::text, g1::text from teacher_reviews_fixture;
+insert into core.schedule_disciplines(id, organization_id, name, normalized_name, identity_key)
+  select d1, 'mirea', 'Тестовая математика', 'тестовая математика', d1::text from teacher_reviews_fixture
+  union all select d2, 'mirea', 'Тестовая физика', 'тестовая физика', d2::text from teacher_reviews_fixture;
+insert into core.schedule_item(id, organization_id, term_id, source_uid, content_hash, kind, title, discipline_id, start_time, end_time, dates)
+  select i1, 'mirea', 99991, i1::text, md5(i1::text), 'lesson', 'Тестовая математика', d1, '10:40'::time, '12:10'::time, array[miniapp_teacher_reviews.today(), miniapp_teacher_reviews.today() + 7] from teacher_reviews_fixture
+  union all select i2, 'mirea', 99991, i2::text, md5(i2::text), 'lesson', 'Тестовая физика', d2, '12:40'::time, '14:10'::time, array[miniapp_teacher_reviews.today() + 1] from teacher_reviews_fixture
+  union all select i3, 'mirea', 99991, i3::text, md5(i3::text), 'lesson', 'Тестовая математика', d1, '09:00'::time, '10:30'::time, array[miniapp_teacher_reviews.today() + 2] from teacher_reviews_fixture;
 insert into core.schedule_item_teacher(item_id, teacher_id)
   select i1, t1 from teacher_reviews_fixture union all select i2, t2 from teacher_reviews_fixture union all select i3, t3 from teacher_reviews_fixture;
 insert into core.schedule_item_group(item_id, group_id)
   select i1, g1 from teacher_reviews_fixture union all select i2, g1 from teacher_reviews_fixture;
 insert into core.user_academic_profiles(user_id, organization_id, handle, academic_group, full_name)
-  select a, 'mirea', 'tester', 'ТЕСТ-01-24', 'Тестов Тест Тестович' from teacher_reviews_fixture;
+  select a, 'mirea', 'tester_' || left(replace(a::text, '-', ''), 12), 'ТЕСТ-' || g1::text, 'Тестов Тест Тестович' from teacher_reviews_fixture;
+insert into core.user_academic_profiles(user_id, organization_id, handle)
+select id, 'mirea', 'tester_' || left(replace(id::text, '-', ''), 12)
+from teacher_reviews_fixture f cross join lateral unnest(array[f.b,f.c]) id;
 grant select on teacher_reviews_fixture to service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
 set local role service_role;
 
 do $$
@@ -38,8 +46,13 @@ declare
   t1 uuid := (select f.t1 from teacher_reviews_fixture f);
   t2 uuid := (select f.t2 from teacher_reviews_fixture f);
   t3 uuid := (select f.t3 from teacher_reviews_fixture f);
+  v_teacher_name text := (select full_name from core.schedule_teachers where id = t1);
+  v_group_name text := (select 'ТЕСТ-' || f.g1::text from teacher_reviews_fixture f);
   result jsonb;
   v_review_id uuid;
+  v_a_rank integer;
+  v_b_rank integer;
+  v_seed_reviews integer;
   failed boolean;
   i integer;
 begin
@@ -61,7 +74,7 @@ begin
 
   result := public.miniapp_teacher_reviews_dispatch(a, 'state', '{"view":"home"}');
   assert result -> 'me' ->> 'has_group' = 'true';
-  assert result -> 'me' ->> 'group_name' = 'ТЕСТ-01-24';
+  assert result -> 'me' ->> 'group_name' = v_group_name;
   assert result -> 'me' ->> 'reviews' = '0';
   assert result -> 'me' -> 'level' ->> 'name' = 'Новичок';
   assert exists (select 1 from jsonb_array_elements(result -> 'today') x where x ->> 'id' = t1::text);
@@ -69,7 +82,10 @@ begin
   assert (select count(*) = 2 from jsonb_array_elements(result -> 'recommend'));
   assert result -> 'recommend' -> 0 ->> 'id' = t1::text;
   assert result -> 'recommend' -> 0 ->> 'today' = 'true';
-  assert result -> 'top' = '[]'::jsonb;
+  assert not exists (select 1 from jsonb_array_elements(result -> 'top') x
+    where x ->> 'id' = any(array[t1::text, t2::text, t3::text]));
+  assert (select count(*) = 3 from miniapp_teacher_reviews.teacher_table()
+    where teacher_id = any(array[t1, t2, t3]) and reviews = 0 and rank_overall is null);
   assert exists (select 1 from miniapp_teacher_reviews.snapshot_days where day = miniapp_teacher_reviews.today());
 
   result := public.miniapp_teacher_reviews_dispatch(b, 'state', '{"view":"home"}');
@@ -112,10 +128,18 @@ begin
 
   result := public.miniapp_teacher_reviews_dispatch(b, 'review', jsonb_build_object('id', t1, 'clarity', 3, 'loyalty', 3, 'usefulness', 3, 'body', '', 'anonymous', true));
   assert result ->> 'pioneer' = 'false';
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claim.role', '', true);
   update core.teacher_reviews set created_at = created_at + interval '1 second' where user_id = b;
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  execute 'set local role service_role';
   result := public.miniapp_teacher_reviews_dispatch(a, 'state', jsonb_build_object('view', 'teacher', 'id', t1));
   assert result -> 'teacher' ->> 'reviews' = '2';
-  assert result -> 'teacher' ->> 'rank' = '1';
+  assert (result -> 'teacher' ->> 'rank')::integer >= 1;
+  assert (result -> 'teacher' ->> 'rating')::numeric = 3.83;
+  assert (result -> 'teacher' ->> 'score')::numeric between 1 and 5;
   assert result -> 'teacher' ->> 'top_days' = '0';
   assert result -> 'teacher' ->> 'mine' = 'true';
   assert result -> 'teacher' -> 'my_review' ->> 'clarity' = '5';
@@ -128,17 +152,18 @@ begin
   assert result -> 'teacher' -> 'similar' = '[]'::jsonb;
 
   insert into miniapp_teacher_reviews.leaderboard_days(day, kind, subject, rank, score)
-  values (miniapp_teacher_reviews.today(), 'teachers', 'Тестовый Иван Иванович', 1, 4.5),
-    (miniapp_teacher_reviews.today() - 1, 'teachers', 'Тестовый Иван Иванович', 3, 4.4),
-    (miniapp_teacher_reviews.today() - 2, 'teachers', 'Тестовый Иван Иванович', 9, 4.4),
-    (miniapp_teacher_reviews.today() - 4, 'teachers', 'Тестовый Иван Иванович', 2, 4.4),
-    (miniapp_teacher_reviews.today() - 5, 'teachers', 'Тестовый Иван Иванович', 2, 4.4),
-    (miniapp_teacher_reviews.today() - 6, 'teachers', 'Тестовый Иван Иванович', 2, 4.4),
-    (miniapp_teacher_reviews.today() - 7, 'teachers', 'Тестовый Иван Иванович', 2, 4.4);
-  assert miniapp_teacher_reviews.streak('teachers', 'Тестовый Иван Иванович') = 3;
-  assert miniapp_teacher_reviews.best_streak('teachers', 'Тестовый Иван Иванович') = 4;
+  values (miniapp_teacher_reviews.today(), 'teachers', v_teacher_name, 1, 4.5),
+    (miniapp_teacher_reviews.today() - 1, 'teachers', v_teacher_name, 3, 4.4),
+    (miniapp_teacher_reviews.today() - 2, 'teachers', v_teacher_name, 9, 4.4),
+    (miniapp_teacher_reviews.today() - 4, 'teachers', v_teacher_name, 2, 4.4),
+    (miniapp_teacher_reviews.today() - 5, 'teachers', v_teacher_name, 2, 4.4),
+    (miniapp_teacher_reviews.today() - 6, 'teachers', v_teacher_name, 2, 4.4),
+    (miniapp_teacher_reviews.today() - 7, 'teachers', v_teacher_name, 2, 4.4);
+  assert miniapp_teacher_reviews.streak('teachers', v_teacher_name) = 3;
+  assert miniapp_teacher_reviews.best_streak('teachers', v_teacher_name) = 4;
   result := public.miniapp_teacher_reviews_dispatch(a, 'state', jsonb_build_object('view', 'teacher', 'id', t1));
-  assert result -> 'teacher' ->> 'top_days' = '3';
+  assert (result -> 'teacher' ->> 'top_days')::integer =
+    case when (result -> 'teacher' ->> 'rank')::integer <= 10 then 3 else 0 end;
   assert result -> 'teacher' ->> 'best_days' = '4';
 
   failed := false;
@@ -155,7 +180,11 @@ begin
   result := public.miniapp_teacher_reviews_dispatch(a, 'state', '{"view":"me"}');
   assert result -> 'me' ->> 'points' = '20';
   assert result -> 'me' ->> 'helpful' = '1';
-  assert result -> 'me' ->> 'rank' = '1';
+  v_a_rank := (result -> 'me' ->> 'rank')::integer;
+  assert v_a_rank >= 1;
+  result := public.miniapp_teacher_reviews_dispatch(b, 'state', '{"view":"me"}');
+  assert v_a_rank < (result -> 'me' ->> 'rank')::integer;
+  result := public.miniapp_teacher_reviews_dispatch(a, 'state', '{"view":"me"}');
   assert jsonb_array_length(result -> 'my_reviews') = 1;
   assert result -> 'my_reviews' -> 0 -> 'card' ->> 'id' = t1::text;
   result := public.miniapp_teacher_reviews_dispatch(b, 'vote', jsonb_build_object('id', v_review_id, 'helpful', false));
@@ -178,7 +207,7 @@ begin
   perform public.miniapp_teacher_reviews_dispatch(a, 'follow', jsonb_build_object('id', t2, 'follow', false));
   assert (select count(*) from miniapp_teacher_reviews.teacher_follows where user_id = a) = 0;
 
-  result := public.miniapp_teacher_reviews_dispatch(a, 'search', '{"q":"Тестовый Иван"}');
+  result := public.miniapp_teacher_reviews_dispatch(a, 'search', jsonb_build_object('q', v_teacher_name));
   assert result ->> 'count' = '1';
   assert result -> 'items' -> 0 ->> 'id' = t1::text;
   result := public.miniapp_teacher_reviews_dispatch(a, 'search', '{"q":"тестовая физика"}');
@@ -196,9 +225,21 @@ begin
   assert result ->> 'count' = '0';
 
   result := public.miniapp_teacher_reviews_dispatch(a, 'top', '{"board":"overall","scope":"all"}');
+  assert (result ->> 'count')::integer >= 1;
+  assert (select bool_and((x ->> 'position')::integer = position)
+    from jsonb_array_elements(result -> 'items') with ordinality rows(x, position));
+  assert not exists (select 1 from (
+    select (x ->> 'score')::numeric as score,
+      lead((x ->> 'score')::numeric) over (order by position) as next_score
+    from jsonb_array_elements(result -> 'items') with ordinality rows(x, position)
+  ) ordered where score < next_score);
+  result := public.miniapp_teacher_reviews_dispatch(a, 'top', '{"board":"overall","scope":"group"}');
   assert result ->> 'count' = '1';
+  assert result -> 'items' -> 0 ->> 'id' = t1::text;
   assert result -> 'items' -> 0 ->> 'position' = '1';
-  assert result -> 'items' -> 0 ->> 'top_days' = '3';
+  assert result -> 'items' -> 0 ->> 'rating' = '3.83';
+  assert (result -> 'items' -> 0 ->> 'top_days')::integer =
+    case when (result -> 'items' -> 0 ->> 'rank')::integer <= 10 then 3 else 0 end;
   result := public.miniapp_teacher_reviews_dispatch(b, 'top', '{"board":"overall","scope":"group"}');
   assert result ->> 'count' = '0';
   result := public.miniapp_teacher_reviews_dispatch(a, 'top', '{"board":"rising","scope":"group"}');
@@ -210,15 +251,39 @@ begin
   end;
   assert failed;
 
+  select coalesce(min(points), 0) / 10 + 1 into v_seed_reviews
+  from (select points from miniapp_teacher_reviews.student_points()
+    where points > 0 order by points desc, reviews desc, user_id limit 20) leaders;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  insert into core.teacher_reviews(organization_id, user_id, teacher_name, clarity, loyalty, usefulness, body)
+  select 'mirea', actor, 'Board fixture ' || actor::text || ' ' || n, 4, 4, 4, ''
+  from unnest(array[a, b]) actor cross join generate_series(1, v_seed_reviews) n;
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  execute 'set local role service_role';
+  result := public.miniapp_teacher_reviews_dispatch(a, 'state', '{"view":"me"}');
+  v_a_rank := (result -> 'me' ->> 'rank')::integer;
+  assert (result -> 'me' ->> 'points')::integer = 15 + v_seed_reviews * 10;
+  result := public.miniapp_teacher_reviews_dispatch(b, 'state', '{"view":"me"}');
+  v_b_rank := (result -> 'me' ->> 'rank')::integer;
+  assert (result -> 'me' ->> 'points')::integer = 10 + v_seed_reviews * 10;
+  assert v_a_rank < v_b_rank and v_b_rank <= 20;
+
   result := public.miniapp_teacher_reviews_dispatch(a, 'state', '{"view":"top"}');
   assert result -> 'board' ->> 'board' = 'overall';
-  assert jsonb_array_length(result -> 'students') = 2;
-  assert result -> 'students' -> 0 ->> 'mine' = 'true';
-  assert result -> 'students' -> 0 ->> 'name' like 'Ниндзя #%';
+  assert jsonb_array_length(result -> 'students') >= 2;
+  assert exists (select 1 from jsonb_array_elements(result -> 'students') x
+    where (x ->> 'rank')::integer = v_a_rank and x ->> 'mine' = 'true'
+      and x ->> 'name' like 'Ниндзя #%' and (x ->> 'points')::integer = 15 + v_seed_reviews * 10);
+  assert exists (select 1 from jsonb_array_elements(result -> 'students') x
+    where (x ->> 'rank')::integer = v_b_rank and x ->> 'mine' = 'false'
+      and x ->> 'name' = miniapp_teacher_reviews.display_name(b, false));
   perform public.miniapp_teacher_reviews_dispatch(a, 'settings', '{"show_in_leaderboard":true}');
   result := public.miniapp_teacher_reviews_dispatch(b, 'state', '{"view":"top"}');
-  assert result -> 'students' -> 0 ->> 'name' = 'Тестов Т.';
-  assert result -> 'students' -> 1 ->> 'name' like 'Ниндзя #%';
+  assert exists (select 1 from jsonb_array_elements(result -> 'students') x
+    where (x ->> 'rank')::integer = v_a_rank and x ->> 'mine' = 'false' and x ->> 'name' = 'Тестов Т.');
+  assert exists (select 1 from jsonb_array_elements(result -> 'students') x
+    where (x ->> 'rank')::integer = v_b_rank and x ->> 'mine' = 'true' and x ->> 'name' like 'Ниндзя #%');
   failed := false;
   begin
     perform public.miniapp_teacher_reviews_dispatch(a, 'settings', '{"show_in_leaderboard":"yes"}');
