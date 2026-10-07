@@ -9,12 +9,21 @@ const client = url && key
     auth: { persistSession: false, autoRefreshToken: false },
   })
   : null;
-Deno.serve(createHandler(key, async (userId, action, payload = {}) => {
-  if (!client) throw new Error("Service unavailable");
-  const { data, error } = await client.rpc(
-    "miniapp_teacher_reviews_dispatch",
-    { p_user_id: userId, p_action: action, p_payload: payload },
-  );
-  if (error) throw error;
-  return object(data);
-}));
+Deno.serve(
+  createHandler(key, async (userId, action, payload = {}, sessionId) => {
+    if (!client) throw new Error("Service unavailable");
+    const { data, error } = await client.rpc(
+      sessionId
+        ? "miniapp_teacher_reviews_session_dispatch"
+        : "miniapp_teacher_reviews_dispatch",
+      {
+        p_user_id: userId,
+        p_action: action,
+        p_payload: payload,
+        ...(sessionId ? { p_session_id: sessionId } : {}),
+      },
+    );
+    if (error) throw error;
+    return object(data);
+  }),
+);

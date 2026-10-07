@@ -22,6 +22,7 @@ export type Dispatch = (
   userId: string,
   action: string,
   payload?: Json,
+  sessionId?: string | null,
 ) => Promise<Json>;
 const headers = {
   "Content-Type": "application/json; charset=utf-8",
@@ -77,7 +78,10 @@ function boolInput(v: unknown): boolean {
   return v;
 }
 
-export function createHandler(serviceKey: string, dispatch: Dispatch) {
+export function createHandler(
+  serviceKey: string,
+  dispatchWithContext: Dispatch,
+) {
   return async (request: Request): Promise<Response> => {
     if (request.method !== "POST") {
       return json({ error: "Method not allowed" }, 405);
@@ -93,11 +97,17 @@ export function createHandler(serviceKey: string, dispatch: Dispatch) {
       const input = await readBody(request);
       if (
         input.organizationId !== "mirea" || input.slug !== slug ||
-        !uuid(input.userId)
+        !uuid(input.userId) ||
+        (input.sessionId != null && !uuid(input.sessionId))
       ) return json({ error: "Invalid proxy context" }, 403);
       const userId = string(input.userId),
         route = parseRoute(input.path),
         body = object(input.body);
+      const sessionId = input.sessionId == null
+        ? null
+        : string(input.sessionId);
+      const dispatch: Dispatch = (actor, action, payload) =>
+        dispatchWithContext(actor, action, payload, sessionId);
       if ((input.kind ?? "screen") === "screen") {
         const view = views[route.path];
         const state = view
@@ -202,12 +212,23 @@ export function createHandler(serviceKey: string, dispatch: Dispatch) {
         return json({ error: error.message }, error.status);
       }
       const code = string(object(error).code);
-      if (code === "42501") return json({ error: "Действие недоступно" }, 403);
+      if (code === "42501") {
+        const hint = string(object(error).hint);
+        const message = hint === "content_account_unverified"
+          ? "Подтвердите аккаунт, чтобы оставлять оценки и голосовать."
+          : hint === "content_account_cooldown"
+          ? "Оценки и голосование доступны через 24 часа после подтверждения аккаунта."
+          : "Действие недоступно";
+        return json({ error: message }, 403);
+      }
       if (code === "P0002") {
         return json({ error: "Запись уже недоступна" }, 404);
       }
       if (code === "P0001") {
-        return json({ error: "Лимит на сегодня исчерпан" }, 429);
+        return json(
+          { error: "Слишком много действий. Попробуйте позже." },
+          429,
+        );
       }
       if (["22023", "23514", "22007", "22P02", "22001"].includes(code)) {
         return json({ error: "Проверьте заполненные поля" }, 422);
